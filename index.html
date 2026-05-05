@@ -1,0 +1,1952 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>光菓舎 領収証印刷</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;500;700&family=Shippori+Mincho:wght@400;500&family=Sawarabi+Mincho&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Hiragino Kaku Gothic ProN", "メイリオ", Meiryo, sans-serif;
+    background: #f5f5f5; color: #333; font-size: 13px;
+  }
+  .app { display: grid; grid-template-columns: 380px 1fr; min-height: 100vh; }
+  .sidebar { background: #fff; border-right: 1px solid #ddd; padding: 14px; overflow-y: auto; max-height: 100vh; }
+  .main { padding: 20px; overflow-y: auto; max-height: 100vh; }
+
+  h1 { font-size: 17px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+  h2 { font-size: 13px; margin: 0; color: #555; }
+  .save-state { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: normal; }
+  .save-state.saved { background: #e8f5e9; color: #396; }
+  .save-state.dirty { background: #fff3e0; color: #c70; }
+
+  details.section { margin: 10px 0; border: 1px solid #eee; border-radius: 6px; background: #fafafa; }
+  details.section[open] { background: #fff; }
+  details.section > summary {
+    list-style: none; cursor: pointer; padding: 8px 10px; user-select: none;
+    display: flex; align-items: center; gap: 6px; font-weight: bold; color: #555; border-radius: 6px;
+  }
+  details.section > summary::-webkit-details-marker { display: none; }
+  details.section > summary::before {
+    content: "▶"; font-size: 11px; color: #888;
+    display: inline-block; transition: transform .15s ease;
+    transform-origin: center;
+  }
+  details.section[open] > summary::before {
+    content: "▶"; transform: rotate(90deg); color: #c0392b;
+  }
+  details.section > summary:hover { background: #f5f5f5; }
+  .section-body { padding: 4px 10px 10px; }
+
+  label { display: block; font-size: 11px; color: #666; margin: 8px 0 2px; }
+  input[type="text"], input[type="number"], textarea, select {
+    width: 100%; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px;
+    font-size: 13px; font-family: inherit; background: #fff;
+  }
+  textarea { resize: vertical; min-height: 50px; line-height: 1.5; }
+  .row { display: flex; gap: 6px; }
+  .row > * { flex: 1; }
+
+  button {
+    padding: 7px 12px; border: 1px solid #aaa; background: #fff;
+    border-radius: 4px; cursor: pointer; font-size: 12px; font-family: inherit;
+  }
+  button:hover { background: #f5f5f5; }
+  button.primary { background: #c0392b; color: #fff; border-color: #c0392b; }
+  button.primary:hover { background: #962b1f; }
+  button.ghost { border: none; color: #666; padding: 4px 8px; }
+  button.ghost:hover { background: #eee; }
+  button.danger { color: #c33; border-color: #e0a0a0; }
+  button.danger:hover { background: #fff0f0; }
+
+  /* ===== 領収書種類カード（のしと同じ） ===== */
+  .type-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin: 6px 0;
+  }
+  .type-card {
+    border: 1px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer;
+    overflow: hidden; transition: border-color .1s; position: relative;
+    display: flex; flex-direction: column; user-select: none;
+  }
+  .type-card:hover { border-color: #888; }
+  .type-card.active { border-color: #c0392b; box-shadow: 0 0 0 2px rgba(192,57,43,0.18); }
+  .type-card .thumb {
+    width: 100%; aspect-ratio: 2 / 1;
+    background: linear-gradient(180deg, #fff8f0 0%, #f4e6d8 100%) no-repeat center / contain;
+    border-bottom: 1px solid #eee;
+  }
+  .type-card .thumb.has-img {
+    background-color: #fff; background-size: cover;
+    background-position: center; background-repeat: no-repeat;
+  }
+  .type-card .meta { padding: 5px 6px; font-size: 11px; line-height: 1.3; flex: 1; }
+  .type-card .meta .nm { font-weight: bold; color: #333; }
+  .type-card .meta .sz { color: #888; font-size: 10px; }
+  .type-card .edit {
+    position: absolute; top: 2px; right: 2px;
+    background: rgba(255,255,255,0.85); border: 1px solid #ccc;
+    padding: 2px 6px; font-size: 10px; border-radius: 3px;
+    opacity: 0; cursor: pointer;
+  }
+  .type-card:hover .edit { opacity: 1; }
+
+  /* 位置調整 */
+  .pos-row {
+    display: grid; grid-template-columns: 28px 1fr 22px 56px 22px;
+    align-items: center; gap: 3px; margin: 3px 0;
+  }
+  .pos-row .pos-label { font-size: 11px; color: #666; text-align: center; }
+  .pos-row input[type="range"] { width: 100%; padding: 0; margin: 0; height: 16px; min-width: 0; }
+  .pos-row .pos-step {
+    padding: 2px 0; font-size: 11px; background: #fff;
+    border: 1px solid #b0c8e0; color: #2d6098; border-radius: 3px;
+    cursor: pointer; line-height: 1;
+  }
+  .pos-row .pos-step:hover { background: #e8f1fa; }
+  .pos-row input.pos-val {
+    text-align: center; font-family: ui-monospace, monospace; font-size: 11px;
+    padding: 2px 2px; background: #fff; border: 1px solid #ccc; border-radius: 3px;
+    min-width: 0; width: 100%;
+  }
+  .pos-row input.pos-val::-webkit-outer-spin-button,
+  .pos-row input.pos-val::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .block-pos { border-top: 1px dashed #e0e0e0; padding-top: 6px; margin-top: 8px; }
+  .block-pos .pos-title { font-size: 11px; color: #555; font-weight: bold; margin: 0 0 4px; }
+  .field-row { display: grid; grid-template-columns: 1fr 70px; gap: 6px; align-items: center; }
+
+  /* プレビュー */
+  .preview-toolbar {
+    display: flex; align-items: center; gap: 12px; padding: 8px 12px;
+    background: #fff; border: 1px solid #e0e0e0; border-radius: 6px;
+    margin-bottom: 16px; flex-wrap: wrap;
+  }
+  .preview-toolbar label { margin: 0; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+  .preview-toolbar input[type="range"] { width: 140px; }
+  .preview-toolbar .info { color: #666; font-size: 12px; margin-left: auto; }
+
+  .preview-stage {
+    background: #e8e3d8;
+    background-image:
+      linear-gradient(45deg, #d8d3c8 25%, transparent 25%),
+      linear-gradient(-45deg, #d8d3c8 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #d8d3c8 75%),
+      linear-gradient(-45deg, transparent 75%, #d8d3c8 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, 10px 0;
+    padding: 30px; border-radius: 8px; overflow: auto; min-height: 60vh;
+    display: flex; justify-content: center; align-items: flex-start;
+  }
+  .paper-wrap { transform: scale(var(--zoom, 1)); transform-origin: top center; }
+  .print-canvas { position: relative; }
+  .print-canvas.a4 {
+    width: 297mm; height: 210mm; background: rgba(255,255,255,0.5);
+    border: 1px dashed #88a; box-shadow: 0 2px 14px rgba(0,0,0,0.10);
+  }
+  .print-canvas.a4 .paper {
+    position: absolute;
+    top: var(--a4-y, 0mm);
+    left: calc(50% + var(--a4-x, 0mm));
+    transform: translateX(-50%);
+    box-shadow: 0 0 0 1px #ccc;
+  }
+  .print-canvas.a4 .feed-mark {
+    position: absolute; top: -22px; left: 50%; transform: translateX(-50%);
+    font-size: 11px; color: #4a90c0; background: #e8f1fa;
+    padding: 2px 8px; border-radius: 10px; white-space: nowrap;
+  }
+  .print-canvas:not(.a4) .feed-mark { display: none; }
+  .print-canvas.a4::before {
+    content: "A4 横 (297×210mm)"; position: absolute; top: 4px; left: 6px;
+    font-size: 11px; color: #88a; z-index: 10;
+    background: rgba(255,255,255,0.7); padding: 1px 4px; border-radius: 2px;
+  }
+
+  .paper {
+    position: relative;
+    width: var(--paper-w, 188mm);
+    height: var(--paper-h, 90mm);
+    background: #fffef8;
+    box-shadow: 0 2px 14px rgba(0,0,0,0.18);
+    overflow: hidden; color: #111;
+  }
+  .paper .bg-img {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: contain; opacity: 0.55; pointer-events: none;
+  }
+  .paper .guide-svg {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    pointer-events: none; opacity: 0.35;
+  }
+  .text-block {
+    position: absolute;
+    left: var(--bx, 0mm);
+    top: var(--by, 0mm);
+    font-size: var(--fs, 12pt);
+    white-space: nowrap;
+    line-height: 1.2;
+  }
+  .text-block.center { transform: translateX(-50%); }
+  .text-block.right  { transform: translateX(-100%); }
+
+  .paper.font-mincho, .paper.font-mincho * { font-family: "Noto Serif JP", "Hiragino Mincho ProN", "Yu Mincho", "MS Mincho", serif; }
+  .paper.font-shippori, .paper.font-shippori * { font-family: "Shippori Mincho", "Hiragino Mincho ProN", serif; }
+  .paper.font-sawarabi, .paper.font-sawarabi * { font-family: "Sawarabi Mincho", "Hiragino Mincho ProN", serif; }
+  .paper.font-gothic, .paper.font-gothic * { font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", sans-serif; }
+
+  /* 履歴 */
+  .history-list {
+    list-style: none; padding: 0; margin: 4px 0 0;
+    max-height: 280px; overflow-y: auto;
+    border: 1px solid #eee; border-radius: 4px; background: #fafafa;
+  }
+  .history-list li {
+    padding: 6px 24px 6px 8px; border-bottom: 1px solid #eee;
+    font-size: 12px; cursor: pointer; position: relative;
+  }
+  .history-list li:hover { background: #f0f0f0; }
+  .history-list li:last-child { border-bottom: none; }
+  .history-list .h-amt { color: #c0392b; font-weight: bold; }
+  .history-list .h-meta { color: #888; font-size: 10px; }
+  .history-list .h-del-btn {
+    position: absolute; top: 4px; right: 4px;
+    background: transparent; border: none;
+    color: #c33; font-size: 14px; line-height: 1;
+    cursor: pointer; padding: 2px 6px;
+    border-radius: 3px;
+    opacity: 0;
+  }
+  .history-list li:hover .h-del-btn { opacity: 0.6; }
+  .history-list .h-del-btn:hover { opacity: 1 !important; background: #fee; }
+  .history-search { width: 100%; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; margin: 4px 0; }
+
+  .small-help { font-size: 11px; color: #888; margin: 4px 0; }
+
+  /* ===== サイドバー編集モード ===== */
+  .edit-mode-btn {
+    font-size: 11px; padding: 3px 8px;
+    background: #fff; border: 1px solid #b0c8e0; color: #2d6098;
+    border-radius: 12px; cursor: pointer;
+  }
+  .edit-mode-btn.active { background: #2d6098; color: #fff; border-color: #2d6098; }
+  body.edit-mode details.section[data-section-id] { cursor: grab; border-color: #2d6098; }
+  body.edit-mode details.section[data-section-id]:active { cursor: grabbing; }
+  body.edit-mode details.section[data-section-id] > summary::after {
+    content: '⠿'; margin-left: auto; color: #2d6098; font-size: 14px; padding-right: 6px;
+  }
+  body.edit-mode .block-pos[data-block-id] { cursor: grab; outline: 1px dashed #b0c8e0; padding: 6px; border-radius: 4px; margin-top: 6px; }
+  body.edit-mode .block-pos[data-block-id] .pos-title::before { content: '⠿ '; color: #2d6098; }
+  .dragging { opacity: 0.4; }
+  .drop-before { box-shadow: 0 -3px 0 #c0392b !important; }
+  .drop-after { box-shadow: 0 3px 0 #c0392b !important; }
+
+  /* モーダル */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100; padding: 20px;
+  }
+  .modal-backdrop[hidden] { display: none; }
+  .modal-card {
+    background: #fff; border-radius: 8px;
+    width: min(560px, 100%); max-height: 90vh;
+    overflow-y: auto; padding: 20px;
+    box-shadow: 0 6px 30px rgba(0,0,0,0.3);
+  }
+  .modal-card h2 { font-size: 16px; margin: 0 0 12px; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+  .thumb-preview {
+    width: 100%; height: 120px;
+    background: #fafafa no-repeat center / contain;
+    border: 1px dashed #ccc; border-radius: 4px;
+    margin-top: 4px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: #aaa; font-size: 12px;
+  }
+
+  @media print {
+    html, body {
+      margin: 0 !important; padding: 0 !important;
+      background: #fff !important;
+      overflow: hidden !important;
+    }
+    .sidebar, .preview-toolbar, .modal-backdrop, .print-hide { display: none !important; }
+    .app { display: block !important; margin: 0 !important; padding: 0 !important; }
+    .main {
+      padding: 0 !important; margin: 0 !important;
+      max-height: none !important; overflow: hidden !important;
+    }
+    .preview-stage {
+      padding: 0 !important; margin: 0 !important;
+      background: #fff !important;
+      min-height: 0 !important; display: block !important;
+      overflow: hidden !important;
+    }
+    .paper-wrap { transform: none !important; margin: 0 !important; padding: 0 !important; }
+    .paper {
+      box-shadow: none !important; margin: 0 !important;
+      page-break-inside: avoid !important;
+      page-break-after: avoid !important;
+    }
+    .paper .bg-img, .paper .guide-svg { display: none !important; }
+    /* A4 モード: 1ページに収める */
+    body.print-a4 {
+      width: 297mm !important; height: 210mm !important;
+    }
+    body.print-a4 .app,
+    body.print-a4 .main,
+    body.print-a4 .preview-stage,
+    body.print-a4 .paper-wrap {
+      width: 297mm !important; height: 210mm !important;
+      overflow: hidden !important;
+    }
+    body.print-a4 .print-canvas {
+      width: 297mm !important; height: 210mm !important;
+      background: #fff !important; border: none !important; box-shadow: none !important;
+      overflow: hidden !important;
+      page-break-after: avoid !important;
+      page-break-inside: avoid !important;
+    }
+    body.print-a4 .print-canvas::before { display: none !important; }
+    body.print-a4 .paper {
+      position: absolute !important;
+      top: var(--a4-y, 0mm) !important;
+      left: calc(50% + var(--a4-x, 0mm)) !important;
+      transform: translateX(-50%) !important;
+      box-shadow: none !important;
+    }
+    body.print-a4 .feed-mark { display: none !important; }
+    /* 直接印刷モード: 用紙サイズに収める */
+    body:not(.print-a4) .print-canvas {
+      page-break-after: avoid !important;
+      page-break-inside: avoid !important;
+    }
+  }
+</style>
+<style id="printStyle"></style>
+</head>
+<body>
+
+<div class="app">
+
+  <aside class="sidebar print-hide">
+    <h1>領収証印刷
+      <span class="save-state saved" id="saveState">保存済</span>
+      <button class="edit-mode-btn" id="editModeBtn" title="サイドバーの並びを編集">🔧 並び替え</button>
+    </h1>
+
+    <div id="sectionsContainer">
+    <details class="section" data-section-id="type" open>
+      <summary><h2>1. 領収書の種類</h2></summary>
+      <div class="section-body">
+        <div class="type-grid" id="typeGrid"></div>
+        <div class="row" style="margin-top:6px">
+          <button id="addTypeBtn">＋ 新規領収書を追加</button>
+        </div>
+      </div>
+    </details>
+
+    <details class="section" data-section-id="content" open>
+      <summary><h2>2. 内容</h2></summary>
+      <div class="section-body">
+        <label>宛名</label>
+        <input type="text" id="atena">
+        <label style="margin-top:4px; display:flex; align-items:center; gap:4px; font-size:12px; color:#444">
+          <input type="checkbox" id="autoSama"> 「　様」を自動で付ける（プリプリント用紙に「様」が無い時だけON）
+        </label>
+
+        <label>金額</label>
+        <input type="text" id="kingaku">
+        <div class="row" style="margin-top:4px">
+          <label style="margin:0; display:flex; align-items:center; gap:4px">
+            <input type="checkbox" id="zenkaku" checked> 全角数字
+          </label>
+          <label style="margin:0; display:flex; align-items:center; gap:4px">
+            <input type="checkbox" id="endHyphen" checked> 末尾「-」
+          </label>
+        </div>
+
+        <label>但し書き</label>
+        <input type="text" id="tadashi">
+
+        <label>日付</label>
+        <div class="row">
+          <select id="era" style="flex:0 0 60px">
+            <option value="令和">令和</option>
+            <option value="平成">平成</option>
+            <option value="">西暦</option>
+          </select>
+          <input type="number" id="year"  placeholder="年" min="1" style="flex:1">
+          <input type="number" id="month" placeholder="月" min="1" max="12" style="flex:1">
+          <input type="number" id="day"   placeholder="日" min="1" max="31" style="flex:1">
+        </div>
+        <div id="eraTable" style="font-size:10.5px; color:#666; background:#f7f4ec; border:1px solid #e3dcc6; border-radius:4px; padding:4px 6px; margin-top:4px; line-height:1.6"></div>
+        <div class="row" style="margin-top:4px">
+          <button class="ghost" id="todayBtn">今日</button>
+          <button class="ghost" id="clearDateBtn">クリア</button>
+        </div>
+
+        <div style="margin-top:10px; padding-top:8px; border-top:1px dashed #e0e0e0">
+          <button id="saveAtenaBtn" style="background:#f0f7f0; border-color:#8bb88b; width:100%">📌 この宛名を保存</button>
+          <details id="atenaSavedSection" style="margin-top:8px">
+            <summary style="cursor:pointer; font-size:12px; color:#555; padding:4px 0">
+              📋 保存した宛名 <span id="atenaCount" style="color:#999">(0)</span>
+            </summary>
+            <input type="text" class="history-search" id="atenaSearch" placeholder="検索">
+            <ul class="history-list" id="atenaList"></ul>
+            <div class="row" style="margin-top:6px">
+              <button class="ghost" id="atenaExport">📥 CSV書出</button>
+              <button class="ghost" id="atenaImport">📤 CSV取込</button>
+              <button class="ghost danger" id="atenaClear">全削除</button>
+            </div>
+            <input type="file" id="atenaImportFile" accept=".csv,text/csv" hidden>
+          </details>
+        </div>
+
+        <details class="section" id="issuerSection" style="margin-top:10px">
+          <summary><h2>発行者</h2></summary>
+          <div class="section-body">
+            <div class="small-help">編集後は下の「発行者を保存」を押してください。</div>
+            <label>発行者 名前</label>
+            <input type="text" id="issuer">
+            <label>発行者 住所</label>
+            <input type="text" id="address">
+            <div class="row" style="margin-top:8px">
+              <button class="primary" id="saveIssuer">発行者を保存</button>
+              <button class="ghost" id="resetIssuer">変更を取り消し</button>
+            </div>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details class="section" data-section-id="a4">
+      <summary><h2>3. A4 印刷モード</h2></summary>
+      <div class="section-body">
+        <label style="margin:0; display:flex; align-items:center; gap:6px; cursor:pointer">
+          <input type="checkbox" id="printAsA4" checked> A4 用紙に配置して印刷する
+        </label>
+        <div id="a4Box" style="margin-top:8px">
+          <label>A4 内の領収証位置（中央からのオフセット mm）</label>
+          <div class="pos-row">
+            <span class="pos-label">X</span>
+            <input type="range" id="a4X" min="-130" max="130" value="0" step="0.1">
+            <button class="pos-step" data-target="a4X" data-delta="-0.1">−</button>
+            <input type="number" class="pos-val" id="a4XVal" value="0" step="0.1">
+            <button class="pos-step" data-target="a4X" data-delta="0.1">＋</button>
+          </div>
+          <div class="pos-row">
+            <span class="pos-label">Y</span>
+            <input type="range" id="a4Y" min="0" max="160" value="60" step="0.1">
+            <button class="pos-step" data-target="a4Y" data-delta="-0.1">−</button>
+            <input type="number" class="pos-val" id="a4YVal" value="60" step="0.1">
+            <button class="pos-step" data-target="a4Y" data-delta="0.1">＋</button>
+          </div>
+          <div class="row" style="margin-top:4px">
+            <button class="ghost" id="a4Top">↑上</button>
+            <button class="ghost" id="a4VC">●上下中央</button>
+            <button class="ghost" id="a4Bot">↓下</button>
+          </div>
+          <div class="row" style="margin-top:3px">
+            <button class="ghost" id="a4Left">←左端</button>
+            <button class="ghost" id="a4HC">●左右中央</button>
+            <button class="ghost" id="a4Right">→右端</button>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <button id="snapshotSaveA4" style="background:#f0f7f0; border-color:#8bb88b">💾 この A4位置を初期値として保存</button>
+          </div>
+        </div>
+        <label style="margin-top:10px; display:flex; align-items:center; gap:6px">
+          <input type="checkbox" id="showGuide" checked>
+          位置合わせガイドを表示（印刷時は非表示）
+        </label>
+      </div>
+    </details>
+
+    <details class="section" data-section-id="pos">
+      <summary><h2>4. 位置とサイズの微調整</h2></summary>
+      <div class="section-body">
+        <div class="small-help">
+          各ブロックの X/Y は領収証用紙の左上からの mm 距離。<br>
+          試し刷りして 0.5〜1mm ずつ動かして合わせます。
+        </div>
+
+        <div class="row" style="margin: 6px 0">
+          <button id="snapshotSave" style="background:#f0f7f0; border-color:#8bb88b">💾 この設定を初期値として保存</button>
+          <button id="snapshotRestore" style="background:#fff7e0; border-color:#d4b870">↺ 保存した初期値に戻す</button>
+        </div>
+
+        <div id="posBlocks">
+        <div class="block-pos" data-block-id="atena">
+          <div class="pos-title">宛名</div>
+          <div class="pos-row">
+            <span class="pos-label">X</span>
+            <input type="range" id="atenaX" min="0" max="200" step="0.1">
+            <button class="pos-step" data-target="atenaX" data-delta="-0.1">−</button>
+            <input type="number" class="pos-val" id="atenaXVal" step="0.1">
+            <button class="pos-step" data-target="atenaX" data-delta="0.1">＋</button>
+          </div>
+          <div class="pos-row">
+            <span class="pos-label">Y</span>
+            <input type="range" id="atenaY" min="0" max="100" step="0.1">
+            <button class="pos-step" data-target="atenaY" data-delta="-0.1">−</button>
+            <input type="number" class="pos-val" id="atenaYVal" step="0.1">
+            <button class="pos-step" data-target="atenaY" data-delta="0.1">＋</button>
+          </div>
+          <div class="pos-row" title="文字と文字の間隔（em単位）">
+            <span class="pos-label" style="font-size:10px">字間</span>
+            <input type="range" id="atenaSpacing" min="-0.1" max="1.5" step="0.01">
+            <button class="pos-step" data-target="atenaSpacing" data-delta="-0.05">−</button>
+            <input type="number" class="pos-val" id="atenaSpacingVal" step="0.01">
+            <button class="pos-step" data-target="atenaSpacing" data-delta="0.05">＋</button>
+          </div>
+          <div class="field-row"><span style="font-size:11px;color:#666">サイズ pt</span><input type="number" class="pos-val" id="atenaFs" step="0.5" min="6" max="40"></div>
+        </div>
+
+        <div class="block-pos" data-block-id="kin">
+          <div class="pos-title">金額</div>
+          <div class="pos-row">
+            <span class="pos-label">X</span>
+            <input type="range" id="kinX" min="0" max="200" step="0.1">
+            <button class="pos-step" data-target="kinX" data-delta="-0.1">−</button>
+            <input type="number" class="pos-val" id="kinXVal" step="0.1">
+            <button class="pos-step" data-target="kinX" data-delta="0.1">＋</button>
+          </div>
+          <div class="pos-row">
+            <span class="pos-label">Y</span>
+            <input type="range" id="kinY" min="0" max="100" step="0.1">
+            <button class="pos-step" data-target="kinY" data-delta="-0.1">−</button>
+            <input type="number" class="pos-val" id="kinYVal" step="0.1">
+            <button class="pos-step" data-target="kinY" data-delta="0.1">＋</button>
+          </div>
+          <div class="field-row"><span style="font-size:11px;color:#666">サイズ pt</span><input type="number" class="pos-val" id="kinFs" step="0.5" min="6" max="40"></div>
+        </div>
+
+        <div class="block-pos" data-block-id="tad">
+          <div class="pos-title">但し書き</div>
+          <div class="pos-row">
+            <span class="pos-label">X</span>
+            <input type="range" id="tadX" min="0" max="200" step="0.1">
+            <button class="pos-step" data-target="tadX" data-delta="-0.1">−</button>
+            <input type="number" class="pos-val" id="tadXVal" step="0.1">
+            <button class="pos-step" data-target="tadX" data-delta="0.1">＋</button>
+          </div>
+          <div class="pos-row">
+            <span class="pos-label">Y</span>
+            <input type="range" id="tadY" min="0" max="100" step="0.1">
+            <button class="pos-step" data-target="tadY" data-delta="-0.1">−</button>
+            <input type="number" class="pos-val" id="tadYVal" step="0.1">
+            <button class="pos-step" data-target="tadY" data-delta="0.1">＋</button>
+          </div>
+          <div class="field-row"><span style="font-size:11px;color:#666">サイズ pt</span><input type="number" class="pos-val" id="tadFs" step="0.5" min="6" max="40"></div>
+        </div>
+
+        <div class="block-pos" data-block-id="date">
+          <div class="pos-title">日付（年・月・日）</div>
+          <div class="pos-row" style="grid-template-columns: 32px 1fr 22px 56px 22px">
+            <span class="pos-label">年X</span>
+            <input type="range" id="dateYearX" min="0" max="200" step="0.1">
+            <button class="pos-step" data-target="dateYearX" data-delta="-0.1">−</button>
+            <input type="number" class="pos-val" id="dateYearXVal" step="0.1">
+            <button class="pos-step" data-target="dateYearX" data-delta="0.1">＋</button>
+          </div>
+          <div class="pos-row" style="grid-template-columns: 32px 1fr 22px 56px 22px">
+            <span class="pos-label">月X</span>
+            <input type="range" id="dateMonthX" min="0" max="200" step="0.1">
+            <button class="pos-step" data-target="dateMonthX" data-delta="-0.1">−</button>
+            <input type="number" class="pos-val" id="dateMonthXVal" step="0.1">
+            <button class="pos-step" data-target="dateMonthX" data-delta="0.1">＋</button>
+          </div>
+          <div class="pos-row" style="grid-template-columns: 32px 1fr 22px 56px 22px">
+            <span class="pos-label">日X</span>
+            <input type="range" id="dateDayX" min="0" max="200" step="0.1">
+            <button class="pos-step" data-target="dateDayX" data-delta="-0.1">−</button>
+            <input type="number" class="pos-val" id="dateDayXVal" step="0.1">
+            <button class="pos-step" data-target="dateDayX" data-delta="0.1">＋</button>
+          </div>
+          <div class="pos-row" style="grid-template-columns: 32px 1fr 22px 56px 22px">
+            <span class="pos-label">Y</span>
+            <input type="range" id="dateY" min="0" max="100" step="0.1">
+            <button class="pos-step" data-target="dateY" data-delta="-0.1">−</button>
+            <input type="number" class="pos-val" id="dateYVal" step="0.1">
+            <button class="pos-step" data-target="dateY" data-delta="0.1">＋</button>
+          </div>
+          <div class="field-row"><span style="font-size:11px;color:#666">サイズ pt</span><input type="number" class="pos-val" id="dateFs" step="0.5" min="6" max="30"></div>
+          <div style="display:flex; align-items:center; gap:3px; margin-top:6px; flex-wrap:wrap">
+            <span style="font-size:11px; color:#666; min-width:90px">3つまとめてX</span>
+            <button class="pos-step" data-shift="dateX" data-delta="-1">−1</button>
+            <button class="pos-step" data-shift="dateX" data-delta="-0.5">−0.5</button>
+            <button class="pos-step" data-shift="dateX" data-delta="-0.1">−0.1</button>
+            <button class="pos-step" data-shift="dateX" data-delta="0.1">＋0.1</button>
+            <button class="pos-step" data-shift="dateX" data-delta="0.5">＋0.5</button>
+            <button class="pos-step" data-shift="dateX" data-delta="1">＋1</button>
+          </div>
+          <div style="display:flex; align-items:center; gap:3px; margin-top:4px; flex-wrap:wrap">
+            <span style="font-size:11px; color:#666; min-width:90px">Y シフト</span>
+            <button class="pos-step" data-shift="dateY" data-delta="-1">−1</button>
+            <button class="pos-step" data-shift="dateY" data-delta="-0.5">−0.5</button>
+            <button class="pos-step" data-shift="dateY" data-delta="-0.1">−0.1</button>
+            <button class="pos-step" data-shift="dateY" data-delta="0.1">＋0.1</button>
+            <button class="pos-step" data-shift="dateY" data-delta="0.5">＋0.5</button>
+            <button class="pos-step" data-shift="dateY" data-delta="1">＋1</button>
+          </div>
+        </div>
+
+        <div class="block-pos" data-block-id="issuer">
+          <div class="pos-title">発行者</div>
+          <div class="pos-row">
+            <span class="pos-label">X</span>
+            <input type="range" id="issX" min="0" max="200" step="0.1">
+            <button class="pos-step" data-target="issX" data-delta="-0.1">−</button>
+            <input type="number" class="pos-val" id="issXVal" step="0.1">
+            <button class="pos-step" data-target="issX" data-delta="0.1">＋</button>
+          </div>
+          <div class="pos-row">
+            <span class="pos-label">Y</span>
+            <input type="range" id="issY" min="0" max="100" step="0.1">
+            <button class="pos-step" data-target="issY" data-delta="-0.1">−</button>
+            <input type="number" class="pos-val" id="issYVal" step="0.1">
+            <button class="pos-step" data-target="issY" data-delta="0.1">＋</button>
+          </div>
+          <div class="field-row"><span style="font-size:11px;color:#666">名前 pt</span><input type="number" class="pos-val" id="issFs" step="0.5" min="6" max="30"></div>
+          <div class="field-row"><span style="font-size:11px;color:#666">住所 pt</span><input type="number" class="pos-val" id="addrFs" step="0.5" min="6" max="30"></div>
+          <div class="field-row" style="grid-template-columns:1fr 1fr;gap:4px">
+            <button class="ghost" id="alignR">右寄せ</button>
+            <button class="ghost" id="alignC">中央</button>
+          </div>
+        </div>
+
+        </div><!-- /#posBlocks -->
+
+        <div class="row" style="margin-top:10px">
+          <button class="ghost" id="resetPos">既定値に戻す</button>
+          <button class="ghost" id="saveAsTypeDefault">この位置を種類の既定として保存</button>
+        </div>
+      </div>
+    </details>
+
+    <details class="section" data-section-id="font">
+      <summary><h2>5. フォント</h2></summary>
+      <div class="section-body">
+        <select id="font">
+          <option value="mincho">明朝（Noto Serif JP）</option>
+          <option value="shippori">しっぽり明朝</option>
+          <option value="sawarabi">さわらび明朝</option>
+          <option value="gothic">ゴシック</option>
+        </select>
+      </div>
+    </details>
+
+    <details class="section" id="histSection" data-section-id="history">
+      <summary><h2>6. 保存した内容</h2></summary>
+      <div class="section-body">
+        <input type="text" class="history-search" id="histSearch" placeholder="宛名・金額・但し書きで検索">
+        <select id="histSort" style="margin-top:4px">
+          <option value="saved-desc">保存日：新しい順</option>
+          <option value="saved-asc">保存日：古い順</option>
+          <option value="issued-desc">発行日：新しい順</option>
+          <option value="issued-asc">発行日：古い順</option>
+          <option value="amt-desc">金額：高い順</option>
+          <option value="amt-asc">金額：安い順</option>
+          <option value="atena">宛名順</option>
+        </select>
+        <ul class="history-list" id="histList"></ul>
+        <div class="small-help">各項目にカーソルを合わせると右上に × が出ます</div>
+        <div class="row" style="margin-top:6px; flex-wrap:wrap">
+          <button class="ghost" id="histExport">📥 CSV書出</button>
+          <button class="ghost" id="histImport">📤 CSV取込</button>
+          <button class="ghost danger" id="histClear">全削除</button>
+        </div>
+        <input type="file" id="histImportFile" accept=".csv,text/csv" hidden>
+      </div>
+    </details>
+
+    <details class="section" data-section-id="data">
+      <summary><h2>7. 設定の入出力</h2></summary>
+      <div class="section-body">
+        <div class="small-help">領収書種類（用紙サイズ・位置・A4オフセット等）の設定をCSVで保存／取込できます。<br>機種変更や別PCに移す時に使ってください。</div>
+        <div class="row" style="margin-top:6px; flex-wrap:wrap">
+          <button id="typesExport">📥 設定をCSV書出</button>
+          <button id="typesImport">📤 設定をCSV取込</button>
+        </div>
+        <input type="file" id="typesImportFile" accept=".csv,text/csv" hidden>
+        <div class="small-help" style="margin-top:8px">※ サムネイル画像はCSVに含まれません（画像はファイルから個別に再アップロードしてください）</div>
+      </div>
+    </details>
+
+    </div><!-- /#sectionsContainer -->
+
+    <div style="font-size:11.5px; color:#c0392b; text-align:center; margin: 14px 0 4px; padding: 5px 8px; background:#fef5f3; border:1px dashed #e0a0a0; border-radius:4px; line-height:1.5">
+      ⚠ 領収証用紙は <b>裏面を向けて</b><br>
+      <b>上が右に</b>来るようにセット
+    </div>
+    <div class="row" style="margin-top:6px">
+      <button class="primary" id="printBtn" style="flex:2">🖨 印刷</button>
+      <button id="saveBtn" style="flex:1">履歴保存</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="preview-toolbar print-hide">
+      <label>ズーム
+        <input type="range" id="zoom" min="0.4" max="2" step="0.05" value="0.7">
+        <span id="zoomVal">70%</span>
+      </label>
+      <span class="info" id="paperInfo"></span>
+    </div>
+    <div class="preview-stage">
+      <div class="paper-wrap" id="paperWrap">
+        <div class="print-canvas" id="printCanvas">
+          <div class="feed-mark">↑ この方向にA4を給紙</div>
+          <div class="paper" id="paper"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- 領収書種類 編集モーダル -->
+<div class="modal-backdrop print-hide" id="editModal" hidden>
+  <div class="modal-card">
+    <h2 id="editModalTitle">領収書を追加</h2>
+    <label>名称</label>
+    <input type="text" id="editName" placeholder="例: 小判 188×90">
+    <div class="row">
+      <div>
+        <label>幅 W (mm)</label>
+        <input type="number" id="editW" step="0.5" min="50" max="500">
+      </div>
+      <div>
+        <label>高さ H (mm)</label>
+        <input type="number" id="editH" step="0.5" min="30" max="400">
+      </div>
+    </div>
+    <label>サンプル画像 / PDF（任意・印字位置の合わせに使う）</label>
+    <div class="thumb-preview" id="editThumb">クリックして画像 / PDF を選択</div>
+    <div class="row" style="margin-top:4px">
+      <button class="ghost" id="editThumbClear" style="display:none">画像を削除</button>
+    </div>
+    <input type="file" id="editThumbFile" accept="image/*,application/pdf" hidden>
+
+    <div style="margin-top:14px; padding-top:10px; border-top:1px dashed #ddd">
+      <label style="font-weight:bold; color:#444">A4 内の初期位置（mm）</label>
+      <div class="small-help">この種類を選んだ時の既定位置。基本は「右端寄せ＋上下中央」。</div>
+      <div class="row">
+        <div>
+          <label>X（中央からのオフセット／＋で右へ）</label>
+          <input type="number" id="editA4X" step="0.5">
+        </div>
+        <div>
+          <label>Y（用紙上端からの距離）</label>
+          <input type="number" id="editA4Y" step="0.5">
+        </div>
+      </div>
+      <div class="row" style="margin-top:6px; gap:4px">
+        <button class="ghost" id="editA4XLeft">←左端</button>
+        <button class="ghost" id="editA4XCenter">●中央</button>
+        <button class="ghost" id="editA4XRight">→右端</button>
+      </div>
+      <div class="row" style="margin-top:3px; gap:4px">
+        <button class="ghost" id="editA4YTop">↑上</button>
+        <button class="ghost" id="editA4YCenter">●上下中央</button>
+        <button class="ghost" id="editA4YBot">↓下</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button id="editA4Reset">初期値（右端寄せ＋上下中央）に戻す</button>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="danger" id="editDelete" style="margin-right:auto; display:none">削除</button>
+      <button id="editCancel">キャンセル</button>
+      <button class="primary" id="editSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============ 状態 ============ */
+const $ = id => document.getElementById(id);
+const STORAGE_KEY = 'koukasya_ryoshu_state_v5';
+const HISTORY_KEY = 'koukasya_ryoshu_history_v2';
+const ATENA_KEY   = 'koukasya_ryoshu_atena_v1';
+const A4_W = 297, A4_H = 210;  // A4 横向き
+const calcRightX = w => Math.round((A4_W - w) / 2 * 10) / 10;     // 右端寄せ
+const calcVCenterY = h => Math.max(0, Math.round((A4_H - h) / 2 * 10) / 10); // 上下中央
+
+const POS_DEFAULTS = {
+  atenaX: 100, atenaY: 14, atenaFs: 14, atenaSpacing: 0,
+  kinX: 55, kinY: 32, kinFs: 18,
+  tadX: 42, tadY: 51, tadFs: 11,
+  dateYearX: 68, dateMonthX: 92, dateDayX: 115, dateY: 61, dateFs: 11,
+  issX: 180, issY: 68, issFs: 10, addrFs: 8,
+};
+
+const SEED_TYPES = [
+  {
+    id: 'kobang_188x90',
+    name: '小判（標準）',
+    widthMm: 188, heightMm: 90, thumb: null,
+    a4OffsetX: calcRightX(188), a4OffsetY: calcVCenterY(90),
+    ...POS_DEFAULTS,
+  },
+];
+
+let state = {
+  types: [],
+  currentTypeId: null,
+  // 入力内容
+  atena: '', kingaku: '', tadashi: '',
+  era: '令和', year: '', month: '', day: '',
+  issuer: '光菓舎-koukasya-　滝本 祥子',
+  address: '〒650-0004 神戸市中央区中山手通5丁目2番22-1階',
+  // 表示
+  font: 'mincho', zenkaku: true, endHyphen: true,
+  autoSama: false,
+  printAsA4: true, showGuide: true,
+  issuerAlign: 'right',
+  zoom: 0.7,
+  // サイドバー並び順
+  sectionOrder: null,
+  posBlockOrder: null,
+  editMode: false,
+  // 現在の位置（種類から読み込んで上書き）
+  ...POS_DEFAULTS,
+  a4X: calcRightX(188), a4Y: calcVCenterY(90),
+};
+
+const PER_TYPE_KEYS = [
+  ...Object.keys(POS_DEFAULTS),
+  'a4X', 'a4Y', 'font',
+];
+function writeToCurrentType(k) {
+  const t = getCurrentType();
+  if (!t) return;
+  if (k === 'a4X') t.a4OffsetX = state.a4X;
+  else if (k === 'a4Y') t.a4OffsetY = state.a4Y;
+  else t[k] = state[k];
+}
+
+let editingTypeId = null;
+let editingThumb = null;
+let editIsNew = false;
+let editBackupType = null;
+let editBackupA4 = null;
+let editBackupCurrentId = null;
+
+/* ============ ロード/保存 ============ */
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    state = { ...state, ...parsed };
+    if (!Array.isArray(state.types) || state.types.length === 0) {
+      state.types = JSON.parse(JSON.stringify(SEED_TYPES));
+    }
+    if (!state.currentTypeId || !state.types.find(t => t.id === state.currentTypeId)) {
+      state.currentTypeId = state.types[0].id;
+    }
+  } catch (e) {
+    console.error('load failed', e);
+    state.types = JSON.parse(JSON.stringify(SEED_TYPES));
+    state.currentTypeId = state.types[0].id;
+  }
+}
+let saveTimer = null;
+function saveState() {
+  setSaveState('dirty');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      setSaveState('saved');
+    } catch (e) { console.error('save failed', e); }
+  }, 250);
+}
+function setSaveState(s) {
+  const el = $('saveState');
+  el.classList.toggle('saved', s === 'saved');
+  el.classList.toggle('dirty', s !== 'saved');
+  el.textContent = s === 'saved' ? '保存済' : '保存中…';
+}
+
+/* ============ 数値フォーマット ============ */
+function toZenkakuDigits(s) {
+  return String(s).replace(/[0-9]/g, d => String.fromCharCode(0xff10 + (+d)))
+                   .replace(/,/g, '，');
+}
+function formatYen(input, zenkaku, endHyphen) {
+  if (input == null) return '';
+  const half = String(input).replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+  const digits = half.replace(/[^0-9]/g, '');
+  if (!digits) return '';
+  let result = '¥' + Number(digits).toLocaleString('en-US');
+  if (endHyphen) result += '-';
+  if (zenkaku) result = result.replace('¥', '￥');
+  return zenkaku ? toZenkakuDigits(result) : result;
+}
+
+/* ============ CSV ============ */
+function csvEscape(v) {
+  if (v == null) return '';
+  const s = String(v);
+  if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+function arrayToCSV(rows, headers) {
+  if (!rows.length) return '';
+  if (!headers) headers = Object.keys(rows[0]);
+  const lines = [headers.join(',')];
+  for (const row of rows) {
+    lines.push(headers.map(h => csvEscape(row[h])).join(','));
+  }
+  return '﻿' + lines.join('\r\n');
+}
+function parseCSV(text) {
+  text = text.replace(/^﻿/, '');
+  const rows = [];
+  let row = [], cur = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') {
+        if (text[i+1] === '"') { cur += '"'; i++; }
+        else inQ = false;
+      } else cur += c;
+    } else {
+      if (c === '"') inQ = true;
+      else if (c === ',') { row.push(cur); cur = ''; }
+      else if (c === '\n' || c === '\r') {
+        if (cur !== '' || row.length) { row.push(cur); rows.push(row); row = []; cur = ''; }
+        if (c === '\r' && text[i+1] === '\n') i++;
+      } else cur += c;
+    }
+  }
+  if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+  if (!rows.length) return [];
+  const headers = rows[0];
+  return rows.slice(1).filter(r => r.length && r.some(v => v !== '')).map(r => {
+    const obj = {};
+    headers.forEach((h, j) => { obj[h] = r[j] ?? ''; });
+    return obj;
+  });
+}
+function downloadFile(filename, content) {
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+const HISTORY_CSV_FIELDS = ['id','atena','kingaku','tadashi','era','year','month','day','saved'];
+const TYPE_CSV_FIELDS = [
+  'id','name','widthMm','heightMm','a4OffsetX','a4OffsetY','font',
+  ...Object.keys(POS_DEFAULTS),
+];
+
+function exportHistory() {
+  const list = loadHistory();
+  if (!list.length) { alert('保存した内容がありません'); return; }
+  const csv = arrayToCSV(list, HISTORY_CSV_FIELDS);
+  downloadFile(`領収証_保存内容_${new Date().toISOString().slice(0,10)}.csv`, csv);
+}
+function importHistory(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = parseCSV(reader.result);
+      if (!data.length) { alert('CSVが空または読めません'); return; }
+      const existing = loadHistory();
+      const merged = [
+        ...data.map(d => ({
+          id: +d.id || (Date.now() + Math.floor(Math.random()*1000)),
+          atena: d.atena, kingaku: d.kingaku, tadashi: d.tadashi,
+          era: d.era, year: d.year, month: d.month, day: d.day,
+          saved: d.saved || new Date().toISOString(),
+          issuedKey: '',
+        })),
+        ...existing,
+      ];
+      merged.forEach(e => { if (!e.issuedKey) e.issuedKey = issuedKey(e); });
+      const seen = new Set();
+      const unique = merged.filter(e => seen.has(e.id) ? false : (seen.add(e.id), true));
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(unique.slice(0, 1000)));
+      renderHistory();
+      alert(`${data.length}件取り込みました（既存${existing.length}件と統合、重複ID除外）`);
+    } catch (err) {
+      alert('取込失敗: ' + err.message);
+    }
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+function exportTypes() {
+  if (!state.types.length) { alert('種類がありません'); return; }
+  const rows = state.types.map(t => {
+    const row = {};
+    TYPE_CSV_FIELDS.forEach(k => { row[k] = t[k] != null ? t[k] : ''; });
+    return row;
+  });
+  const csv = arrayToCSV(rows, TYPE_CSV_FIELDS);
+  downloadFile(`領収証_設定_${new Date().toISOString().slice(0,10)}.csv`, csv);
+}
+function importTypes(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = parseCSV(reader.result);
+      if (!data.length) { alert('CSVが空または読めません'); return; }
+      if (!confirm(`${data.length}件の設定を取り込みます。同じIDの種類は上書きされます。続行しますか？`)) return;
+      const num = (v) => { const n = +v; return Number.isFinite(n) ? n : undefined; };
+      let added = 0, updated = 0;
+      data.forEach(d => {
+        if (!d.id || !d.name) return;
+        let t = state.types.find(x => x.id === d.id);
+        const fields = {};
+        if (d.name) fields.name = d.name;
+        ['widthMm','heightMm','a4OffsetX','a4OffsetY'].forEach(k => {
+          const v = num(d[k]); if (v !== undefined) fields[k] = v;
+        });
+        if (d.font) fields.font = d.font;
+        Object.keys(POS_DEFAULTS).forEach(k => {
+          const v = num(d[k]); if (v !== undefined) fields[k] = v;
+        });
+        if (t) { Object.assign(t, fields); updated++; }
+        else {
+          state.types.push({ id: d.id, thumb: null, ...POS_DEFAULTS, ...fields });
+          added++;
+        }
+      });
+      saveState();
+      renderAll();
+      alert(`取込完了：新規 ${added} 件 / 更新 ${updated} 件`);
+    } catch (err) {
+      alert('取込失敗: ' + err.message);
+    }
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+function deleteHistoryItem(id) {
+  const list = loadHistory().filter(x => String(x.id) !== String(id));
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+  renderHistory();
+}
+
+/* ============ 宛名の保存 ============ */
+function loadAtenas() {
+  try { return JSON.parse(localStorage.getItem(ATENA_KEY)) || []; }
+  catch { return []; }
+}
+function saveAtenaItem() {
+  const a = (state.atena || '').trim();
+  if (!a) { alert('宛名が空です'); return; }
+  const list = loadAtenas();
+  // 同じ宛名は重複させず、先頭に持ってくる
+  const filtered = list.filter(x => x.atena !== a);
+  filtered.unshift({ id: Date.now(), atena: a, savedAt: new Date().toISOString() });
+  localStorage.setItem(ATENA_KEY, JSON.stringify(filtered.slice(0, 1000)));
+  renderAtenas();
+}
+function deleteAtenaItem(id) {
+  const list = loadAtenas().filter(x => String(x.id) !== String(id));
+  localStorage.setItem(ATENA_KEY, JSON.stringify(list));
+  renderAtenas();
+}
+function renderAtenas() {
+  const ul = $('atenaList');
+  if (!ul) return;
+  const all = loadAtenas();
+  $('atenaCount').textContent = `(${all.length})`;
+  const q = ($('atenaSearch')?.value || '').trim();
+  const list = all.filter(x => !q || x.atena.includes(q));
+  ul.innerHTML = list.map(x => `
+    <li data-id="${x.id}">
+      <button class="h-del-btn" data-del="${x.id}" title="削除">×</button>
+      <span style="font-weight:bold; color:#333">${escapeHtml(x.atena)}</span>
+      <div class="h-meta">${x.savedAt ? new Date(x.savedAt).toLocaleDateString('ja-JP') : ''}</div>
+    </li>
+  `).join('') || '<li style="color:#999;text-align:center">保存した宛名なし</li>';
+  ul.querySelectorAll('li[data-id]').forEach(li => {
+    li.addEventListener('click', e => {
+      if (e.target.classList.contains('h-del-btn')) return;
+      const item = loadAtenas().find(x => String(x.id) === li.dataset.id);
+      if (!item) return;
+      state.atena = item.atena;
+      $('atena').value = item.atena;
+      saveState();
+      renderPaper();
+    });
+  });
+  ul.querySelectorAll('.h-del-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (!confirm('この宛名を削除しますか？')) return;
+      deleteAtenaItem(btn.dataset.del);
+    });
+  });
+}
+function exportAtenas() {
+  const list = loadAtenas();
+  if (!list.length) { alert('保存した宛名がありません'); return; }
+  const csv = arrayToCSV(list, ['id','atena','savedAt']);
+  downloadFile(`領収証_保存宛名_${new Date().toISOString().slice(0,10)}.csv`, csv);
+}
+function importAtenas(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = parseCSV(reader.result);
+      if (!data.length) { alert('CSVが空または読めません'); return; }
+      const existing = loadAtenas();
+      const seen = new Set(existing.map(x => x.atena));
+      let added = 0;
+      data.forEach(d => {
+        const a = (d.atena || '').trim();
+        if (!a || seen.has(a)) return;
+        existing.unshift({ id: +d.id || (Date.now() + Math.floor(Math.random()*1000)), atena: a, savedAt: d.savedAt || new Date().toISOString() });
+        seen.add(a);
+        added++;
+      });
+      localStorage.setItem(ATENA_KEY, JSON.stringify(existing.slice(0, 1000)));
+      renderAtenas();
+      alert(`${added}件取り込みました（重複は除外）`);
+    } catch (err) {
+      alert('取込失敗: ' + err.message);
+    }
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+/* ============ スナップショット保存/復元 ============ */
+function takeSnapshot() {
+  const t = getCurrentType();
+  if (!t) return;
+  t.snapshot = {};
+  Object.keys(POS_DEFAULTS).forEach(k => { t.snapshot[k] = state[k]; });
+  t.snapshot.a4X = state.a4X;
+  t.snapshot.a4Y = state.a4Y;
+  t.snapshot.font = state.font;
+  saveState();
+}
+function restoreSnapshot() {
+  const t = getCurrentType();
+  if (!t || !t.snapshot) { alert('まだ保存されていません'); return; }
+  Object.keys(POS_DEFAULTS).forEach(k => {
+    if (typeof t.snapshot[k] === 'number') state[k] = t.snapshot[k];
+  });
+  if (typeof t.snapshot.a4X === 'number') state.a4X = t.snapshot.a4X;
+  if (typeof t.snapshot.a4Y === 'number') state.a4Y = t.snapshot.a4Y;
+  if (t.snapshot.font) state.font = t.snapshot.font;
+  // typeにも書き戻し
+  Object.keys(POS_DEFAULTS).forEach(k => writeToCurrentType(k));
+  writeToCurrentType('a4X'); writeToCurrentType('a4Y'); writeToCurrentType('font');
+  pushStateToUI();
+  saveState();
+  renderPaper();
+}
+
+/* ============ サイドバー並び替え ============ */
+let dragSrc = null;
+function bindDragDrop(container, attr) {
+  container.addEventListener('dragstart', e => {
+    if (!state.editMode) return;
+    const t = e.target.closest(`[${attr}]`);
+    if (!t || !container.contains(t)) return;
+    dragSrc = t;
+    t.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', t.getAttribute(attr)); } catch {}
+  });
+  container.addEventListener('dragover', e => {
+    if (!dragSrc) return;
+    const t = e.target.closest(`[${attr}]`);
+    if (!t || t === dragSrc || !container.contains(t)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    container.querySelectorAll(`[${attr}]`).forEach(c => c.classList.remove('drop-before','drop-after'));
+    const rect = t.getBoundingClientRect();
+    const before = (e.clientY - rect.top) < rect.height / 2;
+    t.classList.add(before ? 'drop-before' : 'drop-after');
+  });
+  container.addEventListener('drop', e => {
+    if (!dragSrc) return;
+    const t = e.target.closest(`[${attr}]`);
+    if (!t || t === dragSrc || !container.contains(t)) return;
+    e.preventDefault();
+    const rect = t.getBoundingClientRect();
+    const before = (e.clientY - rect.top) < rect.height / 2;
+    if (before) container.insertBefore(dragSrc, t);
+    else container.insertBefore(dragSrc, t.nextSibling);
+    saveContainerOrder(container, attr);
+  });
+  container.addEventListener('dragend', () => {
+    container.querySelectorAll(`[${attr}]`).forEach(c => c.classList.remove('dragging','drop-before','drop-after'));
+    dragSrc = null;
+  });
+}
+function saveContainerOrder(container, attr) {
+  const order = [...container.querySelectorAll(`[${attr}]`)].map(el => el.getAttribute(attr));
+  if (attr === 'data-section-id') state.sectionOrder = order;
+  else if (attr === 'data-block-id') state.posBlockOrder = order;
+  saveState();
+}
+function applyOrder(container, attr, order) {
+  if (!order || !order.length) return;
+  order.forEach(id => {
+    const el = container.querySelector(`[${attr}="${id}"]`);
+    if (el && el.parentNode === container) container.appendChild(el);
+  });
+}
+function setEditMode(on) {
+  state.editMode = on;
+  document.body.classList.toggle('edit-mode', on);
+  document.querySelectorAll('[data-section-id], [data-block-id]').forEach(el => {
+    el.draggable = on;
+  });
+  $('editModeBtn').classList.toggle('active', on);
+  $('editModeBtn').textContent = on ? '✓ 並び替え終了' : '🔧 並び替え';
+  saveState();
+}
+
+/* ============ PDF→画像変換 ============ */
+async function pdfFileToDataURL(file) {
+  if (typeof pdfjsLib === 'undefined') {
+    throw new Error('pdf.js が読み込まれていません（ネット未接続の可能性）');
+  }
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const arr = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arr }).promise;
+  const page = await pdf.getPage(1);
+  const viewport = page.getViewport({ scale: 2.0 });
+  const cv = document.createElement('canvas');
+  cv.width = viewport.width;
+  cv.height = viewport.height;
+  await page.render({ canvasContext: cv.getContext('2d'), viewport }).promise;
+  // 800px幅程度に縮小してJPEG化（localStorage節約）
+  const maxW = 1200;
+  if (cv.width > maxW) {
+    const cv2 = document.createElement('canvas');
+    cv2.width = maxW;
+    cv2.height = Math.round(cv.height * maxW / cv.width);
+    cv2.getContext('2d').drawImage(cv, 0, 0, cv2.width, cv2.height);
+    return cv2.toDataURL('image/jpeg', 0.85);
+  }
+  return cv.toDataURL('image/jpeg', 0.85);
+}
+
+/* ============ 和暦早見表 ============ */
+function renderEraTable() {
+  const el = $('eraTable');
+  if (!el) return;
+  const today = new Date();
+  const reiwaThisYear = today.getFullYear() - 2018;
+  const era = state.era;
+  if (!era) {
+    el.innerHTML = `<b>西暦</b>　今は ${today.getFullYear()} 年（令和${reiwaThisYear}年）`;
+    return;
+  }
+  const baseYear = era === '令和' ? 2018 : (era === '平成' ? 1988 : null);
+  if (!baseYear) { el.innerHTML = ''; return; }
+  const list = [];
+  for (let i = 1; i <= 10; i++) {
+    const isToday = (era === '令和' && i === reiwaThisYear);
+    const tag = isToday
+      ? `<b style="color:#c0392b">${i}=${baseYear+i}（今）</b>`
+      : `${i}=${baseYear+i}`;
+    list.push(tag);
+  }
+  el.innerHTML = `<b>${era}早見：</b> ${list.join('  ')}`;
+}
+
+/* ============ 領収書種類 ============ */
+function getCurrentType() {
+  return state.types.find(t => t.id === state.currentTypeId) || null;
+}
+function selectType(id) {
+  const t = state.types.find(x => x.id === id);
+  if (!t) return;
+  state.currentTypeId = id;
+  // 種類の各設定を current に反映
+  Object.keys(POS_DEFAULTS).forEach(k => {
+    if (typeof t[k] === 'number') state[k] = t[k];
+  });
+  if (typeof t.a4OffsetX === 'number') state.a4X = t.a4OffsetX;
+  if (typeof t.a4OffsetY === 'number') state.a4Y = t.a4OffsetY;
+  if (t.font) state.font = t.font;
+  pushStateToUI();
+  saveState();
+  renderAll();
+}
+function renderTypeGrid() {
+  const grid = $('typeGrid');
+  grid.innerHTML = '';
+  state.types.forEach(t => {
+    const card = document.createElement('div');
+    card.className = 'type-card' + (t.id === state.currentTypeId ? ' active' : '');
+    card.innerHTML = `
+      <div class="thumb${t.thumb ? ' has-img' : ''}" ${t.thumb ? `style="background-image:url('${t.thumb}')"` : ''}></div>
+      <div class="meta">
+        <div class="nm">${escapeHtml(t.name)}</div>
+        <div class="sz">${t.widthMm}×${t.heightMm}mm</div>
+      </div>
+      <button class="edit" data-id="${t.id}">編集</button>
+    `;
+    card.addEventListener('click', e => {
+      if (e.target.classList.contains('edit')) return;
+      selectType(t.id);
+    });
+    card.querySelector('.edit').addEventListener('click', e => {
+      e.stopPropagation();
+      openEditModal(t.id);
+    });
+    grid.appendChild(card);
+  });
+}
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
+/* ============ 編集モーダル ============ */
+function openEditModal(id) {
+  let t;
+  editIsNew = !id;
+  if (editIsNew) {
+    // 新規追加: 仮の type を作成して live preview させる
+    t = {
+      id: 't_temp_' + Date.now().toString(36),
+      name: '', widthMm: 188, heightMm: 90, thumb: null,
+      a4OffsetX: calcRightX(188), a4OffsetY: calcVCenterY(90),
+      ...POS_DEFAULTS,
+    };
+    state.types.push(t);
+  } else {
+    t = state.types.find(x => x.id === id);
+    if (!t) return;
+  }
+  editingTypeId = t.id;
+  editBackupCurrentId = state.currentTypeId;
+  editBackupType = JSON.parse(JSON.stringify(t));
+  editBackupA4 = { x: state.a4X, y: state.a4Y };
+  selectType(t.id); // 編集中の種類を current にして live preview
+
+  $('editModalTitle').textContent = editIsNew ? '領収書を追加' : '領収書を編集';
+  $('editName').value = editIsNew ? '' : t.name;
+  $('editW').value = t.widthMm;
+  $('editH').value = t.heightMm;
+  $('editA4X').value = t.a4OffsetX;
+  $('editA4Y').value = t.a4OffsetY;
+  editingThumb = t.thumb || null;
+  updateEditThumb();
+  $('editDelete').style.display = (!editIsNew && state.types.length > 1) ? 'inline-block' : 'none';
+  $('editModal').hidden = false;
+}
+function closeEditModal(opts) {
+  opts = opts || {};
+  if (editingTypeId && !opts.commit) {
+    // キャンセル: 復元
+    if (editIsNew) {
+      state.types = state.types.filter(x => x.id !== editingTypeId);
+    } else {
+      const t = state.types.find(x => x.id === editingTypeId);
+      if (t && editBackupType) Object.assign(t, editBackupType);
+    }
+    if (editBackupA4) { state.a4X = editBackupA4.x; state.a4Y = editBackupA4.y; }
+    if (editBackupCurrentId && state.types.find(x => x.id === editBackupCurrentId)) {
+      selectType(editBackupCurrentId);
+    } else if (state.types.length) {
+      selectType(state.types[0].id);
+    }
+    saveState();
+    renderAll();
+  }
+  $('editModal').hidden = true;
+  editingTypeId = null;
+  editingThumb = null;
+  editIsNew = false;
+  editBackupType = null;
+  editBackupA4 = null;
+  editBackupCurrentId = null;
+}
+function liveUpdateModalToType() {
+  if (!editingTypeId) return;
+  const t = state.types.find(x => x.id === editingTypeId);
+  if (!t) return;
+  const w = +$('editW').value, h = +$('editH').value;
+  if (w > 0) t.widthMm = w;
+  if (h > 0) t.heightMm = h;
+  const ax = +$('editA4X').value, ay = +$('editA4Y').value;
+  if (Number.isFinite(ax)) { state.a4X = ax; t.a4OffsetX = ax; }
+  if (Number.isFinite(ay)) { state.a4Y = ay; t.a4OffsetY = ay; }
+  t.thumb = editingThumb;
+  if (!editIsNew) t.name = $('editName').value || t.name;
+  renderTypeGrid();
+  renderPaper();
+}
+function updateEditThumb() {
+  const el = $('editThumb');
+  if (editingThumb) {
+    el.style.backgroundImage = `url('${editingThumb}')`;
+    el.textContent = '';
+    $('editThumbClear').style.display = 'inline-block';
+  } else {
+    el.style.backgroundImage = '';
+    el.textContent = 'クリックして画像を選択';
+    $('editThumbClear').style.display = 'none';
+  }
+}
+function saveEdit() {
+  const name = $('editName').value.trim();
+  const w = +$('editW').value;
+  const h = +$('editH').value;
+  const ax = +$('editA4X').value;
+  const ay = +$('editA4Y').value;
+  if (!name || !w || !h) { alert('名称・幅・高さを入力してください'); return; }
+  const t = state.types.find(x => x.id === editingTypeId);
+  if (!t) return;
+  t.name = name;
+  t.widthMm = w; t.heightMm = h;
+  t.a4OffsetX = ax; t.a4OffsetY = ay;
+  t.thumb = editingThumb;
+  state.a4X = ax; state.a4Y = ay;
+  // 新規の場合、tempのidをそのまま採用（既に state.types に追加済み）
+  saveState();
+  closeEditModal({ commit: true });
+  renderAll();
+}
+function deleteType() {
+  if (!editingTypeId) return;
+  if (state.types.length <= 1) { alert('最後の1件は削除できません'); return; }
+  if (!confirm('この領収書種類を削除します。よろしいですか？')) return;
+  state.types = state.types.filter(t => t.id !== editingTypeId);
+  state.currentTypeId = state.types[0].id;
+  selectType(state.currentTypeId);
+  saveState();
+  closeEditModal({ commit: true });
+  renderAll();
+}
+
+/* ============ UI <-> state ============ */
+const STATE_FIELDS_DIRECT = ['atena','kingaku','tadashi','era','year','month','day','issuer','address','font'];
+const STATE_FIELDS_CHECK  = ['zenkaku','endHyphen','autoSama','printAsA4','showGuide'];
+const STATE_FIELDS_NUM    = ['atenaX','atenaY','atenaFs','atenaSpacing','kinX','kinY','kinFs','tadX','tadY','tadFs',
+                             'dateYearX','dateMonthX','dateDayX','dateY','dateFs',
+                             'issX','issY','issFs','addrFs','a4X','a4Y'];
+
+function pushStateToUI() {
+  STATE_FIELDS_DIRECT.forEach(k => { if ($(k)) $(k).value = state[k] ?? ''; });
+  STATE_FIELDS_CHECK.forEach(k => { if ($(k)) $(k).checked = !!state[k]; });
+  STATE_FIELDS_NUM.forEach(k => {
+    if ($(k)) $(k).value = state[k];
+    if ($(k+'Val')) $(k+'Val').value = state[k];
+  });
+  $('a4Box').style.display = state.printAsA4 ? 'block' : 'none';
+}
+function pullUIToState() {
+  STATE_FIELDS_DIRECT.forEach(k => { if ($(k)) state[k] = $(k).value; });
+  STATE_FIELDS_CHECK.forEach(k => { if ($(k)) state[k] = $(k).checked; });
+  STATE_FIELDS_NUM.forEach(k => {
+    if ($(k+'Val')) state[k] = +$(k+'Val').value;
+    else if ($(k)) state[k] = +$(k).value;
+  });
+}
+
+/* ============ レンダリング ============ */
+function getEraYearText() {
+  if (!state.year) return '';
+  return state.era ? (state.era + state.year) : String(state.year);
+}
+function makeKingaku() {
+  return formatYen(state.kingaku, state.zenkaku, state.endHyphen);
+}
+
+function renderPaper() {
+  const t = getCurrentType();
+  if (!t) return;
+  const paper = $('paper');
+  const canvas = $('printCanvas');
+
+  paper.style.setProperty('--paper-w', t.widthMm + 'mm');
+  paper.style.setProperty('--paper-h', t.heightMm + 'mm');
+  paper.className = 'paper font-' + state.font;
+
+  if (state.printAsA4) {
+    canvas.classList.add('a4');
+    canvas.style.setProperty('--a4-x', state.a4X + 'mm');
+    canvas.style.setProperty('--a4-y', state.a4Y + 'mm');
+    document.body.classList.add('print-a4');
+  } else {
+    canvas.classList.remove('a4');
+    document.body.classList.remove('print-a4');
+  }
+
+  // ガイド画像 or SVGガイド
+  const W = t.widthMm, H = t.heightMm;
+  const bgImg = (t.thumb && state.showGuide)
+    ? `<img class="bg-img" src="${t.thumb}" alt="">`
+    : '';
+  const svgGuide = (!t.thumb && state.showGuide) ? `
+    <svg class="guide-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      <rect x="2" y="2" width="${W-4}" height="${H-4}" fill="none" stroke="#bda" stroke-width="0.4"/>
+      <text x="14" y="14" font-size="6" fill="#888">領 収 証</text>
+      <text x="${W-12}" y="14" font-size="3.5" fill="#aaa">様</text>
+      <line x1="32" y1="33" x2="${W-12}" y2="33" stroke="#d8a070" stroke-width="0.3"/>
+      <text x="14" y="32" font-size="3" fill="#aaa">金額</text>
+      <text x="14" y="51" font-size="3" fill="#aaa">但</text>
+      <text x="${state.dateYearX-6}"  y="${state.dateY+4}" font-size="2.6" fill="#bbb">年</text>
+      <text x="${state.dateMonthX-6}" y="${state.dateY+4}" font-size="2.6" fill="#bbb">月</text>
+      <text x="${state.dateDayX-6}"   y="${state.dateY+4}" font-size="2.6" fill="#bbb">日 上記正に領収いたしました</text>
+      <text x="14" y="${H-14}" font-size="2.8" fill="#aaa">内訳</text>
+      <text x="14" y="${H-7}" font-size="2.8" fill="#aaa">消費税額等(  %)</text>
+    </svg>
+  ` : '';
+
+  const atena = state.atena ? (state.autoSama ? `${state.atena}　様` : state.atena) : '';
+  const kingaku = makeKingaku();
+  const dateY = getEraYearText();
+  const month = state.month || '';
+  const day = state.day || '';
+  const alignClass = state.issuerAlign === 'right' ? 'right' : (state.issuerAlign === 'center' ? 'center' : '');
+
+  paper.innerHTML = `
+    ${bgImg}
+    ${svgGuide}
+    ${atena ? `<div class="text-block" style="--bx:${state.atenaX}mm;--by:${state.atenaY}mm;--fs:${state.atenaFs}pt; letter-spacing:${state.atenaSpacing || 0}em">${escapeHtml(atena)}</div>` : ''}
+    ${kingaku ? `<div class="text-block" style="--bx:${state.kinX}mm;--by:${state.kinY}mm;--fs:${state.kinFs}pt; letter-spacing:0.05em">${kingaku}</div>` : ''}
+    ${state.tadashi ? `<div class="text-block" style="--bx:${state.tadX}mm;--by:${state.tadY}mm;--fs:${state.tadFs}pt">${escapeHtml(state.tadashi)}</div>` : ''}
+    ${dateY ? `<div class="text-block" style="--bx:${state.dateYearX}mm;--by:${state.dateY}mm;--fs:${state.dateFs}pt">${escapeHtml(dateY)}</div>` : ''}
+    ${month ? `<div class="text-block" style="--bx:${state.dateMonthX}mm;--by:${state.dateY}mm;--fs:${state.dateFs}pt">${escapeHtml(String(month))}</div>` : ''}
+    ${day ? `<div class="text-block" style="--bx:${state.dateDayX}mm;--by:${state.dateY}mm;--fs:${state.dateFs}pt">${escapeHtml(String(day))}</div>` : ''}
+    <div class="text-block ${alignClass}" style="--bx:${state.issX}mm;--by:${state.issY}mm;--fs:${state.issFs}pt">
+      ${escapeHtml(state.issuer)}
+      ${state.address ? `<div style="font-size:${state.addrFs}pt; margin-top:1mm">${escapeHtml(state.address)}</div>` : ''}
+    </div>
+  `;
+
+  $('paperInfo').textContent = `${t.name}　${W}×${H}mm　${state.printAsA4 ? '(A4内配置)' : '(直接印刷)'}`;
+}
+
+function renderAll() {
+  renderTypeGrid();
+  renderPaper();
+}
+
+/* ============ 履歴 ============ */
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; }
+  catch { return []; }
+}
+function eraToWestern(era, year) {
+  const y = +year; if (!y) return 0;
+  if (era === '令和') return 2018 + y;
+  if (era === '平成') return 1988 + y;
+  return y;
+}
+function issuedKey(e) {
+  const y = eraToWestern(e.era, e.year);
+  if (!y) return '0000-00-00';
+  const m = String(+e.month || 0).padStart(2, '0');
+  const d = String(+e.day || 0).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+function amountNum(s) {
+  if (!s) return 0;
+  const half = String(s).replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+  return +(half.replace(/[^0-9]/g, '')) || 0;
+}
+
+function saveHistoryItem() {
+  if (!state.atena && !state.kingaku) return;
+  const list = loadHistory();
+  const item = {
+    id: Date.now(),
+    atena: state.atena, kingaku: state.kingaku, tadashi: state.tadashi,
+    era: state.era, year: state.year, month: state.month, day: state.day,
+    saved: new Date().toISOString(),
+  };
+  item.issuedKey = issuedKey(item);
+  list.unshift(item);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, 500)));
+  renderHistory();
+}
+function renderHistory() {
+  const ul = $('histList');
+  const q = ($('histSearch').value || '').trim();
+  const sort = $('histSort').value;
+  let list = loadHistory().filter(e => {
+    if (!q) return true;
+    return [e.atena, e.kingaku, e.tadashi].filter(Boolean).join(' ').includes(q);
+  });
+  list.sort((a, b) => {
+    switch (sort) {
+      case 'saved-asc':   return (a.saved || '').localeCompare(b.saved || '');
+      case 'saved-desc':  return (b.saved || '').localeCompare(a.saved || '');
+      case 'issued-asc':  return (a.issuedKey || issuedKey(a)).localeCompare(b.issuedKey || issuedKey(b));
+      case 'issued-desc': return (b.issuedKey || issuedKey(b)).localeCompare(a.issuedKey || issuedKey(a));
+      case 'amt-asc':     return amountNum(a.kingaku) - amountNum(b.kingaku);
+      case 'amt-desc':    return amountNum(b.kingaku) - amountNum(a.kingaku);
+      case 'atena':       return (a.atena || '').localeCompare(b.atena || '', 'ja');
+      default: return 0;
+    }
+  });
+  ul.innerHTML = list.map(e => `
+    <li data-id="${e.id}">
+      <button class="h-del-btn" data-del="${e.id}" title="この保存内容を削除">×</button>
+      <span class="h-amt">¥${e.kingaku || '?'}</span>
+      <span> ${escapeHtml(e.atena || '(宛名なし)')}</span>
+      <div class="h-meta">${escapeHtml(e.tadashi || '')} ／ 発行: ${escapeHtml(e.era || '')}${e.year || '?'}.${e.month || '?'}.${e.day || '?'} ／ 保存: ${e.saved ? new Date(e.saved).toLocaleDateString('ja-JP') : '?'}</div>
+    </li>
+  `).join('') || '<li style="color:#999;text-align:center">保存した内容なし</li>';
+  ul.querySelectorAll('li[data-id]').forEach(li => {
+    li.addEventListener('click', e => {
+      if (e.target.classList.contains('h-del-btn')) return;
+      const item = loadHistory().find(x => String(x.id) === li.dataset.id);
+      if (!item) return;
+      state.atena = item.atena || '';
+      state.kingaku = item.kingaku || '';
+      state.tadashi = item.tadashi || '';
+      state.era = item.era || '令和';
+      state.year = item.year || '';
+      state.month = item.month || '';
+      state.day = item.day || '';
+      pushStateToUI();
+      renderPaper();
+      renderEraTable();
+    });
+  });
+  ul.querySelectorAll('.h-del-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (!confirm('この保存内容を削除しますか？')) return;
+      deleteHistoryItem(btn.dataset.del);
+    });
+  });
+}
+
+/* ============ イベント ============ */
+function bindPair(rangeId, valId) {
+  const r = $(rangeId), v = $(valId);
+  if (!r || !v) return;
+  r.addEventListener('input', () => {
+    v.value = r.value;
+    state[rangeId] = +r.value;
+    saveState(); renderPaper();
+  });
+  v.addEventListener('input', () => {
+    r.value = v.value;
+    state[rangeId] = +v.value;
+    saveState(); renderPaper();
+  });
+}
+
+function init() {
+  loadState();
+  // 種類が選ばれていなければ初期同期
+  const t = getCurrentType();
+  if (t) {
+    Object.keys(POS_DEFAULTS).forEach(k => {
+      if (typeof t[k] === 'number') state[k] = state[k] ?? t[k];
+    });
+  }
+  pushStateToUI();
+  if (!state.year) setToday(false);
+
+  // 入力反映（発行者・住所は除く＝保存ボタンで明示確定）
+  STATE_FIELDS_DIRECT.filter(k => k !== 'issuer' && k !== 'address').forEach(k => {
+    $(k)?.addEventListener('input', () => {
+      state[k] = $(k).value; saveState();
+      if (k === 'font') writeToCurrentType('font');
+      renderPaper();
+      if (k === 'era' || k === 'year') renderEraTable();
+    });
+  });
+  STATE_FIELDS_CHECK.forEach(k => $(k)?.addEventListener('change', () => {
+    state[k] = $(k).checked; saveState();
+    if (k === 'printAsA4') $('a4Box').style.display = state[k] ? 'block' : 'none';
+    renderPaper();
+  }));
+  STATE_FIELDS_NUM.filter(k => $(k+'Val')).forEach(k => {
+    const r = $(k), v = $(k+'Val');
+    if (r) r.addEventListener('input', () => {
+      v.value = r.value; state[k] = +r.value;
+      if (PER_TYPE_KEYS.includes(k)) writeToCurrentType(k);
+      saveState(); renderPaper();
+    });
+    if (v) v.addEventListener('input', () => {
+      if (r) r.value = v.value; state[k] = +v.value;
+      if (PER_TYPE_KEYS.includes(k)) writeToCurrentType(k);
+      saveState(); renderPaper();
+    });
+  });
+  STATE_FIELDS_NUM.filter(k => !$(k+'Val')).forEach(k => {
+    $(k)?.addEventListener('input', () => {
+      state[k] = +$(k).value;
+      if (PER_TYPE_KEYS.includes(k)) writeToCurrentType(k);
+      saveState(); renderPaper();
+    });
+  });
+
+  // ステップボタン（0.1単位対応・誤差なし）
+  document.querySelectorAll('.pos-step[data-target]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.target;
+      const delta = +btn.dataset.delta;
+      const r = $(id), v = $(id+'Val');
+      const next = Math.round(((+r.value) + delta) * 10) / 10;
+      r.value = next; if (v) v.value = next;
+      state[id] = next;
+      if (PER_TYPE_KEYS.includes(id)) writeToCurrentType(id);
+      saveState(); renderPaper();
+    });
+  });
+
+  // 日付シフト（X 3つまとめて / Y）
+  const SHIFT_TARGETS = {
+    dateX: ['dateYearX','dateMonthX','dateDayX'],
+    dateY: ['dateY'],
+  };
+  document.querySelectorAll('.pos-step[data-shift]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targets = SHIFT_TARGETS[btn.dataset.shift];
+      const d = +btn.dataset.delta;
+      if (!targets) return;
+      targets.forEach(k => {
+        state[k] = Math.round(((+state[k] || 0) + d) * 10) / 10;
+        writeToCurrentType(k);
+        if ($(k)) $(k).value = state[k];
+        if ($(k+'Val')) $(k+'Val').value = state[k];
+      });
+      saveState(); renderPaper();
+    });
+  });
+
+  // 発行者保存・取消し
+  $('saveIssuer').addEventListener('click', () => {
+    state.issuer = $('issuer').value;
+    state.address = $('address').value;
+    saveState(); renderPaper();
+    const btn = $('saveIssuer');
+    const orig = btn.textContent;
+    btn.textContent = '✓ 保存しました';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  });
+  $('resetIssuer').addEventListener('click', () => {
+    $('issuer').value = state.issuer;
+    $('address').value = state.address;
+  });
+
+  // 種類追加
+  $('addTypeBtn').addEventListener('click', () => openEditModal(null));
+  $('editCancel').addEventListener('click', closeEditModal);
+  $('editSave').addEventListener('click', saveEdit);
+  $('editDelete').addEventListener('click', deleteType);
+  $('editThumb').addEventListener('click', () => $('editThumbFile').click());
+  $('editThumbClear').addEventListener('click', () => { editingThumb = null; updateEditThumb(); liveUpdateModalToType(); });
+  // 編集モーダル: live preview のため、入力イベントで type を更新
+  ['editW','editH','editA4X','editA4Y','editName'].forEach(id => {
+    $(id).addEventListener('input', liveUpdateModalToType);
+  });
+  // 編集モーダル: 初期位置プリセット（クリック後に live update）
+  const getEditWH = () => ({ w: +$('editW').value || 188, h: +$('editH').value || 90 });
+  const setAndLive = (id, val) => { $(id).value = val; liveUpdateModalToType(); };
+  $('editA4XLeft').addEventListener('click',   () => { const {w} = getEditWH(); setAndLive('editA4X', -calcRightX(w)); });
+  $('editA4XCenter').addEventListener('click', () => setAndLive('editA4X', 0));
+  $('editA4XRight').addEventListener('click',  () => { const {w} = getEditWH(); setAndLive('editA4X', calcRightX(w)); });
+  $('editA4YTop').addEventListener('click',    () => setAndLive('editA4Y', 10));
+  $('editA4YCenter').addEventListener('click', () => { const {h} = getEditWH(); setAndLive('editA4Y', calcVCenterY(h)); });
+  $('editA4YBot').addEventListener('click',    () => { const {h} = getEditWH(); setAndLive('editA4Y', Math.max(0, A4_H - h - 10)); });
+  $('editA4Reset').addEventListener('click', () => {
+    const {w, h} = getEditWH();
+    $('editA4X').value = calcRightX(w);
+    $('editA4Y').value = calcVCenterY(h);
+    liveUpdateModalToType();
+  });
+
+  $('editThumbFile').addEventListener('change', async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    try {
+      if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) {
+        const el = $('editThumb');
+        const orig = el.textContent;
+        el.textContent = 'PDF読み込み中…';
+        editingThumb = await pdfFileToDataURL(f);
+        el.textContent = orig;
+      } else {
+        editingThumb = await new Promise((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result);
+          r.onerror = reject;
+          r.readAsDataURL(f);
+        });
+      }
+      updateEditThumb();
+      liveUpdateModalToType();
+    } catch (err) {
+      alert('読み込みに失敗しました: ' + err.message);
+    } finally {
+      e.target.value = '';
+    }
+  });
+
+  // 日付ボタン
+  $('todayBtn').addEventListener('click', () => setToday(true));
+  $('clearDateBtn').addEventListener('click', () => {
+    state.year = ''; state.month = ''; state.day = '';
+    pushStateToUI(); saveState(); renderPaper();
+  });
+
+  // 発行者寄せ
+  $('alignR').addEventListener('click', () => { state.issuerAlign = 'right'; saveState(); renderPaper(); });
+  $('alignC').addEventListener('click', () => { state.issuerAlign = 'center'; saveState(); renderPaper(); });
+
+  // A4 配置プリセット
+  const setA4 = (changes) => {
+    Object.assign(state, changes);
+    Object.keys(changes).forEach(k => writeToCurrentType(k));
+    pushStateToUI(); saveState(); renderPaper();
+  };
+  $('a4Top').addEventListener('click', () => setA4({ a4Y: 10 }));
+  $('a4VC').addEventListener('click',  () => setA4({ a4Y: calcVCenterY(getCurrentType().heightMm) }));
+  $('a4Bot').addEventListener('click', () => setA4({ a4Y: Math.max(0, A4_H - getCurrentType().heightMm - 10) }));
+  $('a4Left').addEventListener('click',  () => setA4({ a4X: -calcRightX(getCurrentType().widthMm) }));
+  $('a4HC').addEventListener('click',    () => setA4({ a4X: 0 }));
+  $('a4Right').addEventListener('click', () => setA4({ a4X: calcRightX(getCurrentType().widthMm) }));
+
+  // リセット
+  $('resetPos').addEventListener('click', () => {
+    if (!confirm('位置とサイズをこの種類の既定値に戻します。よろしいですか？')) return;
+    Object.assign(state, POS_DEFAULTS);
+    Object.keys(POS_DEFAULTS).forEach(k => writeToCurrentType(k));
+    pushStateToUI(); saveState(); renderPaper();
+  });
+  $('saveAsTypeDefault').addEventListener('click', () => {
+    const t = getCurrentType();
+    if (!t) return;
+    Object.keys(POS_DEFAULTS).forEach(k => { t[k] = state[k]; });
+    t.a4OffsetX = state.a4X; t.a4OffsetY = state.a4Y;
+    t.font = state.font;
+    saveState();
+    alert('現在の設定を「' + t.name + '」に保存しました（自動保存もされています）');
+  });
+
+  // 印刷
+  $('printBtn').addEventListener('click', () => {
+    saveHistoryItem();
+    const t = getCurrentType();
+    const isA4 = state.printAsA4;
+    $('printStyle').textContent = `
+      @page { size: ${isA4 ? 'A4 landscape' : (t.widthMm + 'mm ' + t.heightMm + 'mm')}; margin: 0; }
+      @page :first { margin: 0; }
+      @page :left  { margin: 0; }
+      @page :right { margin: 0; }
+    `;
+    setTimeout(() => window.print(), 50);
+  });
+
+  // 履歴
+  $('saveBtn').addEventListener('click', saveHistoryItem);
+  $('histSearch').addEventListener('input', renderHistory);
+  $('histSort').addEventListener('change', renderHistory);
+  $('histClear').addEventListener('click', () => {
+    if (confirm('保存した内容を全て削除します。よろしいですか？')) {
+      localStorage.removeItem(HISTORY_KEY); renderHistory();
+    }
+  });
+  $('histExport').addEventListener('click', exportHistory);
+  $('histImport').addEventListener('click', () => $('histImportFile').click());
+  $('histImportFile').addEventListener('change', e => {
+    if (e.target.files[0]) importHistory(e.target.files[0]);
+    e.target.value = '';
+  });
+  $('typesExport').addEventListener('click', exportTypes);
+  $('typesImport').addEventListener('click', () => $('typesImportFile').click());
+  $('typesImportFile').addEventListener('change', e => {
+    if (e.target.files[0]) importTypes(e.target.files[0]);
+    e.target.value = '';
+  });
+
+  // 宛名の保存
+  $('saveAtenaBtn').addEventListener('click', () => {
+    saveAtenaItem();
+    const btn = $('saveAtenaBtn');
+    const orig = btn.textContent;
+    btn.textContent = '✓ 宛名を保存しました';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  });
+  $('atenaSearch').addEventListener('input', renderAtenas);
+  $('atenaClear').addEventListener('click', () => {
+    if (confirm('保存した宛名を全て削除します。よろしいですか？')) {
+      localStorage.removeItem(ATENA_KEY); renderAtenas();
+    }
+  });
+  $('atenaExport').addEventListener('click', exportAtenas);
+  $('atenaImport').addEventListener('click', () => $('atenaImportFile').click());
+  $('atenaImportFile').addEventListener('change', e => {
+    if (e.target.files[0]) importAtenas(e.target.files[0]);
+    e.target.value = '';
+  });
+
+  // ズーム
+  $('zoom').value = state.zoom;
+  $('paperWrap').style.setProperty('--zoom', state.zoom);
+  $('zoomVal').textContent = Math.round(state.zoom * 100) + '%';
+  $('zoom').addEventListener('input', () => {
+    state.zoom = +$('zoom').value;
+    $('paperWrap').style.setProperty('--zoom', state.zoom);
+    $('zoomVal').textContent = Math.round(state.zoom * 100) + '%';
+    saveState();
+  });
+
+  // スナップショット
+  const snapBlink = (btn) => {
+    const orig = btn.textContent;
+    btn.textContent = '✓ 保存しました';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  };
+  $('snapshotSave').addEventListener('click', () => { takeSnapshot(); snapBlink($('snapshotSave')); });
+  $('snapshotSaveA4').addEventListener('click', () => { takeSnapshot(); snapBlink($('snapshotSaveA4')); });
+  $('snapshotRestore').addEventListener('click', restoreSnapshot);
+
+  // 並び替え（編集モード）
+  $('editModeBtn').addEventListener('click', () => setEditMode(!state.editMode));
+  // セクション順を適用
+  const sectionsContainer = document.getElementById('sectionsContainer');
+  if (sectionsContainer) {
+    applyOrder(sectionsContainer, 'data-section-id', state.sectionOrder);
+    bindDragDrop(sectionsContainer, 'data-section-id');
+  }
+  // ブロック順を適用（位置とサイズの微調整セクション内の posBlocks）
+  const posBlocks = document.getElementById('posBlocks');
+  if (posBlocks) {
+    applyOrder(posBlocks, 'data-block-id', state.posBlockOrder);
+    bindDragDrop(posBlocks, 'data-block-id');
+  }
+
+  renderAll();
+  renderHistory();
+  renderAtenas();
+  renderEraTable();
+}
+
+function setToday(rerender) {
+  const now = new Date();
+  state.era = '令和';
+  state.year = now.getFullYear() - 2018;
+  state.month = now.getMonth() + 1;
+  state.day = now.getDate();
+  pushStateToUI();
+  if (rerender) { saveState(); renderPaper(); }
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
