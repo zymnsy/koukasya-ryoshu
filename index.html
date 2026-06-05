@@ -145,8 +145,9 @@
   .paper-wrap { transform: scale(var(--zoom, 1)); transform-origin: top center; }
   .print-canvas { position: relative; }
   .print-canvas.a4 {
-    width: 297mm; height: 210mm; background: rgba(255,255,255,0.5);
-    border: 1px dashed #88a; box-shadow: 0 2px 14px rgba(0,0,0,0.10);
+    width: 297mm; height: 210mm; background: #fff;
+    outline: 1px dashed #88a; box-shadow: 0 2px 14px rgba(0,0,0,0.10);
+    overflow: hidden;
   }
   .print-canvas.a4 .paper {
     position: absolute;
@@ -269,6 +270,8 @@
     color: #aaa; font-size: 12px;
   }
 
+  @page { size: A4 landscape; margin: 0; }
+
   @media print {
     html, body {
       margin: 0 !important; padding: 0 !important;
@@ -307,7 +310,7 @@
     }
     body.print-a4 .print-canvas {
       width: 297mm !important; height: 210mm !important;
-      background: #fff !important; border: none !important; box-shadow: none !important;
+      background: #fff !important; border: none !important; outline: none !important; box-shadow: none !important;
       overflow: hidden !important;
       page-break-after: avoid !important;
       page-break-inside: avoid !important;
@@ -1900,7 +1903,7 @@ function init() {
       @page :left  { margin: 0; }
       @page :right { margin: 0; }
     `;
-    setTimeout(() => window.print(), 50);
+    setTimeout(() => window.print(), 150);
   });
 
   // 履歴
