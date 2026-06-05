@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>光菓舎 領収証印刷</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;500;700&family=Shippori+Mincho:wght@400;500&family=Sawarabi+Mincho&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
@@ -774,6 +775,46 @@ const $ = id => document.getElementById(id);
 const STORAGE_KEY = 'koukasya_ryoshu_state_v5';
 const HISTORY_KEY = 'koukasya_ryoshu_history_v2';
 const ATENA_KEY   = 'koukasya_ryoshu_atena_v1';
+
+// ===== Supabase クラウド保存 =====
+const _SB_URL  = "https://eclzvfxhqiqsjgtvdknf.supabase.co";
+const _SB_KEY  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVjbHp2ZnhocWlxc2pndHZka25mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MzI1MzQsImV4cCI6MjA5NDEwODUzNH0.aayARCQb-GXfkxAXJ4gr8fvZxcQt-6nKzYf2YyTnLw8";
+let _db = null;
+try { if (typeof supabase !== "undefined") _db = supabase.createClient(_SB_URL, _SB_KEY); }
+catch(e) { console.warn("Supabase init error:", e); }
+
+function _sbSave(rowId, data) {
+  if (!_db) return;
+  _db.from("ryoshu_data")
+    .upsert({ id: rowId, data: data, updated_at: new Date().toISOString() }, { onConflict: "id" })
+    .then(({ error }) => { if (error) console.warn("Supabase save error:", error); });
+}
+async function _sbLoad(rowId) {
+  if (!_db) return null;
+  try {
+    const { data, error } = await _db.from("ryoshu_data").select("data").eq("id", rowId).single();
+    return (error || !data) ? null : data.data;
+  } catch(e) { return null; }
+}
+async function _supabaseLoadAll() {
+  const [savedState, savedHistory, savedAtena] = await Promise.all([
+    _sbLoad("ryoshu_state"), _sbLoad("ryoshu_history"), _sbLoad("ryoshu_atena")
+  ]);
+  let changed = false;
+  if (savedState && typeof savedState === "object") {
+    state = Object.assign({}, state, savedState);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    changed = true;
+  }
+  if (Array.isArray(savedHistory)) {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(savedHistory));
+  }
+  if (Array.isArray(savedAtena)) {
+    localStorage.setItem(ATENA_KEY, JSON.stringify(savedAtena));
+  }
+  if (changed) { pushStateToUI(); renderAll(); renderHistory(); renderAtenas(); }
+  if (!savedState) _sbSave("ryoshu_state", state);
+}
 const A4_W = 297, A4_H = 210;  // A4 横向き
 const calcRightX = w => Math.round((A4_W - w) / 2 * 10) / 10;     // 右端寄せ
 const calcVCenterY = h => Math.max(0, Math.round((A4_H - h) / 2 * 10) / 10); // 上下中央
@@ -863,6 +904,7 @@ function saveState() {
   saveTimer = setTimeout(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      _sbSave("ryoshu_state", state);
       setSaveState('saved');
     } catch (e) { console.error('save failed', e); }
   }, 250);
@@ -974,7 +1016,9 @@ function importHistory(file) {
       merged.forEach(e => { if (!e.issuedKey) e.issuedKey = issuedKey(e); });
       const seen = new Set();
       const unique = merged.filter(e => seen.has(e.id) ? false : (seen.add(e.id), true));
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(unique.slice(0, 1000)));
+      const hist1 = unique.slice(0, 1000);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(hist1));
+      _sbSave("ryoshu_history", hist1);
       renderHistory();
       alert(`${data.length}件取り込みました（既存${existing.length}件と統合、重複ID除外）`);
     } catch (err) {
@@ -1034,6 +1078,7 @@ function importTypes(file) {
 function deleteHistoryItem(id) {
   const list = loadHistory().filter(x => String(x.id) !== String(id));
   localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+  _sbSave("ryoshu_history", list);
   renderHistory();
 }
 
@@ -1049,12 +1094,15 @@ function saveAtenaItem() {
   // 同じ宛名は重複させず、先頭に持ってくる
   const filtered = list.filter(x => x.atena !== a);
   filtered.unshift({ id: Date.now(), atena: a, savedAt: new Date().toISOString() });
-  localStorage.setItem(ATENA_KEY, JSON.stringify(filtered.slice(0, 1000)));
+  const atena1 = filtered.slice(0, 1000);
+  localStorage.setItem(ATENA_KEY, JSON.stringify(atena1));
+  _sbSave("ryoshu_atena", atena1);
   renderAtenas();
 }
 function deleteAtenaItem(id) {
   const list = loadAtenas().filter(x => String(x.id) !== String(id));
   localStorage.setItem(ATENA_KEY, JSON.stringify(list));
+  _sbSave("ryoshu_atena", list);
   renderAtenas();
 }
 function renderAtenas() {
@@ -1112,7 +1160,9 @@ function importAtenas(file) {
         seen.add(a);
         added++;
       });
-      localStorage.setItem(ATENA_KEY, JSON.stringify(existing.slice(0, 1000)));
+      const atena2 = existing.slice(0, 1000);
+      localStorage.setItem(ATENA_KEY, JSON.stringify(atena2));
+      _sbSave("ryoshu_atena", atena2);
       renderAtenas();
       alert(`${added}件取り込みました（重複は除外）`);
     } catch (err) {
@@ -1573,7 +1623,9 @@ function saveHistoryItem() {
   };
   item.issuedKey = issuedKey(item);
   list.unshift(item);
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, 500)));
+  const hist2 = list.slice(0, 500);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(hist2));
+  _sbSave("ryoshu_history", hist2);
   renderHistory();
 }
 function renderHistory() {
@@ -1946,7 +1998,7 @@ function setToday(rerender) {
   if (rerender) { saveState(); renderPaper(); }
 }
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => { init(); _supabaseLoadAll(); });
 </script>
 </body>
 </html>
