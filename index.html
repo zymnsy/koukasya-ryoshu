@@ -852,9 +852,17 @@ async function _supabaseLoadAll() {
   ]);
   let changed = false;
   if (savedState && typeof savedState === "object") {
-    state = Object.assign({}, state, savedState);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    changed = true;
+    const localTs = state._savedAt || 0;
+    const remoteTs = savedState._savedAt || 0;
+    if (remoteTs > localTs) {
+      // Supabase の方が新しい → 上書き（別デバイスで調整した場合など）
+      state = Object.assign({}, state, savedState);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      changed = true;
+    } else {
+      // ローカルが最新 → Supabase を今の状態で更新して同期
+      _sbSave("ryoshu_state", state);
+    }
   }
   if (Array.isArray(savedHistory)) {
     const seen = new Set();
@@ -959,6 +967,7 @@ function saveState() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try {
+      state._savedAt = Date.now();
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       _sbSave("ryoshu_state", state);
       setSaveState('saved');
