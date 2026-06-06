@@ -857,7 +857,13 @@ async function _supabaseLoadAll() {
     changed = true;
   }
   if (Array.isArray(savedHistory)) {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(savedHistory));
+    const seen = new Set();
+    const deduped = savedHistory.filter(x => {
+      const key = x.atena || '';
+      return seen.has(key) ? false : (seen.add(key), true);
+    });
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(deduped));
+    if (deduped.length < savedHistory.length) _sbSave("ryoshu_history", deduped);
   }
   if (Array.isArray(savedAtena)) {
     localStorage.setItem(ATENA_KEY, JSON.stringify(savedAtena));
@@ -1699,15 +1705,18 @@ function amountNum(s) {
 function saveHistoryItem() {
   if (!state.atena && !state.kingaku) return;
   const list = loadHistory();
+  const a = state.atena || '';
+  const existing = a ? list.find(x => x.atena === a) : null;
+  const filtered = a ? list.filter(x => x.atena !== a) : list;
   const item = {
-    id: Date.now(),
+    id: existing ? existing.id : Date.now(),
     atena: state.atena, kingaku: state.kingaku, tadashi: state.tadashi,
     era: state.era, year: state.year, month: state.month, day: state.day,
     saved: new Date().toISOString(),
   };
   item.issuedKey = issuedKey(item);
-  list.unshift(item);
-  const hist2 = list.slice(0, 500);
+  filtered.unshift(item);
+  const hist2 = filtered.slice(0, 500);
   localStorage.setItem(HISTORY_KEY, JSON.stringify(hist2));
   _sbSave("ryoshu_history", hist2);
   renderHistory();
