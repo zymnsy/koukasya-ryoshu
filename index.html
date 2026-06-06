@@ -740,6 +740,10 @@
         <input type="number" id="editH" step="0.5" min="30" max="400">
       </div>
     </div>
+    <div id="editSizeLockRow" style="margin-top:4px; padding:6px 10px; background:#f5f5f5; border:1px solid #ddd; border-radius:6px; font-size:11.5px; color:#666; align-items:center; gap:8px">
+      <span>🔒 サイズはロックされています</span>
+      <button type="button" id="editSizeUnlockBtn" style="margin-left:auto; font-size:11px; padding:3px 10px; background:#fff; border:1px solid #aaa; border-radius:4px; cursor:pointer">サイズを変更する</button>
+    </div>
     <label>サンプル画像 / PDF（任意・印字位置の合わせに使う）</label>
     <div class="thumb-preview" id="editThumb">クリックして画像 / PDF を選択</div>
     <div class="row" style="margin-top:4px">
@@ -1440,6 +1444,10 @@ function openEditModal(id) {
   $('editName').value = editIsNew ? '' : t.name;
   $('editW').value = t.widthMm;
   $('editH').value = t.heightMm;
+  // サイズロック：既存編集時のみロック
+  $('editW').disabled = !editIsNew;
+  $('editH').disabled = !editIsNew;
+  $('editSizeLockRow').style.display = editIsNew ? 'none' : 'flex';
   $('editA4X').value = t.a4OffsetX;
   $('editA4Y').value = t.a4OffsetY;
   const _showOutline = t.showOutline || false;
@@ -1875,6 +1883,11 @@ function init() {
   $('editCancel').addEventListener('click', closeEditModal);
   $('editSave').addEventListener('click', saveEdit);
   $('editDelete').addEventListener('click', deleteType);
+  $('editSizeUnlockBtn').addEventListener('click', () => {
+    $('editW').disabled = false;
+    $('editH').disabled = false;
+    $('editSizeLockRow').style.display = 'none';
+  });
   $('editThumb').addEventListener('click', () => $('editThumbFile').click());
   $('editThumbClear').addEventListener('click', () => { editingThumb = null; updateEditThumb(); liveUpdateModalToType(); });
   // 編集モーダル: live preview のため、入力イベントで type を更新
