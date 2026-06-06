@@ -248,18 +248,26 @@
 
   /* モーダル */
   .modal-backdrop {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.45);
-    display: flex; align-items: center; justify-content: center;
-    z-index: 100; padding: 20px;
+    position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+    z-index: 100;
+    pointer-events: none;
   }
   .modal-backdrop[hidden] { display: none; }
   .modal-card {
+    position: fixed; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
     background: #fff; border-radius: 8px;
-    width: min(560px, 100%); max-height: 90vh;
+    width: min(560px, calc(100vw - 40px)); max-height: 85vh;
     overflow-y: auto; padding: 20px;
     box-shadow: 0 6px 30px rgba(0,0,0,0.3);
+    pointer-events: all;
   }
-  .modal-card h2 { font-size: 16px; margin: 0 0 12px; }
+  .modal-card h2 {
+    font-size: 16px; margin: 0 0 12px;
+    cursor: move; user-select: none;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .modal-card h2::after { content: '⠿'; color: #ccc; font-size: 16px; margin-left: auto; }
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
   .thumb-preview {
     width: 100%; height: 120px;
@@ -762,6 +770,37 @@
       <div class="row" style="margin-top:6px">
         <button id="editA4Reset">初期値（右端寄せ＋上下中央）に戻す</button>
       </div>
+      <div class="row" style="margin-top:6px">
+        <button class="ghost" id="editSaveDefaults" title="次回「新規追加」を開いたときのサイズ・位置の初期値になります">★ この値を新規追加の既定値にする</button>
+      </div>
+    </div>
+
+    <div style="margin-top:14px; padding-top:10px; border-top:1px dashed #ddd">
+      <label style="font-weight:bold; color:#444; display:block; margin-bottom:8px">印刷確認用の追加表示（印刷にも出ます）</label>
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:4px">
+        <input type="checkbox" id="editShowOutline">
+        <span>黒い囲い（領収書サイズの枠）</span>
+      </label>
+      <div id="editOutlineSettings" style="margin-left:20px; margin-bottom:8px; display:none">
+        <label style="font-size:12px">囲いの太さ（px）</label>
+        <input type="number" id="editOutlineSize" min="1" max="20" step="1" value="2" style="width:70px">
+      </div>
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer">
+        <input type="checkbox" id="editShowTitle">
+        <span>「領収書」の文字</span>
+      </label>
+      <div id="editTitleSettings" style="margin-left:20px; margin-top:6px; display:none">
+        <div class="row">
+          <div>
+            <label style="font-size:12px">X・中心位置（mm）</label>
+            <input type="number" id="editTitleX" step="0.5">
+          </div>
+          <div>
+            <label style="font-size:12px">Y・上端からの距離（mm）</label>
+            <input type="number" id="editTitleY" step="0.5">
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="modal-actions">
@@ -775,9 +814,10 @@
 <script>
 /* ============ 状態 ============ */
 const $ = id => document.getElementById(id);
-const STORAGE_KEY = 'koukasya_ryoshu_state_v5';
-const HISTORY_KEY = 'koukasya_ryoshu_history_v2';
-const ATENA_KEY   = 'koukasya_ryoshu_atena_v1';
+const STORAGE_KEY      = 'koukasya_ryoshu_state_v5';
+const HISTORY_KEY      = 'koukasya_ryoshu_history_v2';
+const ATENA_KEY        = 'koukasya_ryoshu_atena_v1';
+const MODAL_DEFAULTS_KEY = 'koukasya_ryoshu_modal_defaults_v1';
 
 // ===== Supabase クラウド保存 =====
 const _SB_URL  = "https://eclzvfxhqiqsjgtvdknf.supabase.co";
@@ -1372,11 +1412,14 @@ function openEditModal(id) {
   let t;
   editIsNew = !id;
   if (editIsNew) {
-    // 新規追加: 仮の type を作成して live preview させる
+    // 新規追加: 保存済み既定値があれば使う、なければデフォルト
+    let mdefs = { widthMm: 188, heightMm: 90, a4OffsetX: calcRightX(188), a4OffsetY: calcVCenterY(90) };
+    try { const s = JSON.parse(localStorage.getItem(MODAL_DEFAULTS_KEY)); if (s) Object.assign(mdefs, s); } catch {}
     t = {
       id: 't_temp_' + Date.now().toString(36),
-      name: '', widthMm: 188, heightMm: 90, thumb: null,
-      a4OffsetX: calcRightX(188), a4OffsetY: calcVCenterY(90),
+      name: '', ...mdefs, thumb: null,
+      showOutline: false, outlineSizePx: 2,
+      showTitle: false, titleX: null, titleY: 8,
       ...POS_DEFAULTS,
     };
     state.types.push(t);
@@ -1396,6 +1439,15 @@ function openEditModal(id) {
   $('editH').value = t.heightMm;
   $('editA4X').value = t.a4OffsetX;
   $('editA4Y').value = t.a4OffsetY;
+  const _showOutline = t.showOutline || false;
+  $('editShowOutline').checked = _showOutline;
+  $('editOutlineSize').value = t.outlineSizePx || 2;
+  $('editOutlineSettings').style.display = _showOutline ? '' : 'none';
+  const _showTitle = t.showTitle || false;
+  $('editShowTitle').checked = _showTitle;
+  $('editTitleX').value = t.titleX != null ? t.titleX : Math.round(t.widthMm / 2 * 10) / 10;
+  $('editTitleY').value = t.titleY != null ? t.titleY : 8;
+  $('editTitleSettings').style.display = _showTitle ? '' : 'none';
   editingThumb = t.thumb || null;
   updateEditThumb();
   $('editDelete').style.display = (!editIsNew && state.types.length > 1) ? 'inline-block' : 'none';
@@ -1439,6 +1491,11 @@ function liveUpdateModalToType() {
   if (Number.isFinite(ax)) { state.a4X = ax; t.a4OffsetX = ax; }
   if (Number.isFinite(ay)) { state.a4Y = ay; t.a4OffsetY = ay; }
   t.thumb = editingThumb;
+  t.showOutline = $('editShowOutline').checked;
+  t.outlineSizePx = +$('editOutlineSize').value || 2;
+  t.showTitle = $('editShowTitle').checked;
+  t.titleX = +$('editTitleX').value || Math.round(t.widthMm / 2 * 10) / 10;
+  t.titleY = +$('editTitleY').value || 8;
   if (!editIsNew) t.name = $('editName').value || t.name;
   renderTypeGrid();
   renderPaper();
@@ -1468,6 +1525,11 @@ function saveEdit() {
   t.widthMm = w; t.heightMm = h;
   t.a4OffsetX = ax; t.a4OffsetY = ay;
   t.thumb = editingThumb;
+  t.showOutline = $('editShowOutline').checked;
+  t.outlineSizePx = +$('editOutlineSize').value || 2;
+  t.showTitle = $('editShowTitle').checked;
+  t.titleX = +$('editTitleX').value || Math.round(w / 2 * 10) / 10;
+  t.titleY = +$('editTitleY').value || 8;
   state.a4X = ax; state.a4Y = ay;
   // 新規の場合、tempのidをそのまま採用（既に state.types に追加済み）
   saveState();
@@ -1568,9 +1630,16 @@ function renderPaper() {
   const day = state.day || '';
   const alignClass = state.issuerAlign === 'right' ? 'right' : (state.issuerAlign === 'center' ? 'center' : '');
 
+  const tx = t.titleX != null ? t.titleX : W / 2;
+  const ty = t.titleY != null ? t.titleY : 8;
+  const titleBlock = t.showTitle
+    ? `<div class="text-block center" style="--bx:${tx}mm;--by:${ty}mm;--fs:12pt; letter-spacing:0.2em">領収書</div>`
+    : '';
+
   paper.innerHTML = `
     ${bgImg}
     ${svgGuide}
+    ${titleBlock}
     ${atena ? `<div class="text-block" style="--bx:${state.atenaX}mm;--by:${state.atenaY}mm;--fs:${state.atenaFs}pt; letter-spacing:${state.atenaSpacing || 0}em">${escapeHtml(atena)}</div>` : ''}
     ${kingaku ? `<div class="text-block" style="--bx:${state.kinX}mm;--by:${state.kinY}mm;--fs:${state.kinFs}pt; letter-spacing:0.05em">${kingaku}</div>` : ''}
     ${state.tadashi ? `<div class="text-block" style="--bx:${state.tadX}mm;--by:${state.tadY}mm;--fs:${state.tadFs}pt">${escapeHtml(state.tadashi)}</div>` : ''}
@@ -1583,6 +1652,7 @@ function renderPaper() {
     </div>
   `;
 
+  paper.style.outline = t.showOutline ? `${t.outlineSizePx || 2}px solid #000` : '';
   $('paperInfo').textContent = `${t.name}　${W}×${H}mm　${state.printAsA4 ? '(A4内配置)' : '(直接印刷)'}`;
 }
 
@@ -1805,8 +1875,30 @@ function init() {
   $('editThumb').addEventListener('click', () => $('editThumbFile').click());
   $('editThumbClear').addEventListener('click', () => { editingThumb = null; updateEditThumb(); liveUpdateModalToType(); });
   // 編集モーダル: live preview のため、入力イベントで type を更新
-  ['editW','editH','editA4X','editA4Y','editName'].forEach(id => {
+  ['editW','editH','editA4X','editA4Y','editName','editOutlineSize'].forEach(id => {
     $(id).addEventListener('input', liveUpdateModalToType);
+  });
+  $('editShowOutline').addEventListener('change', () => {
+    $('editOutlineSettings').style.display = $('editShowOutline').checked ? '' : 'none';
+    liveUpdateModalToType();
+  });
+  $('editShowTitle').addEventListener('change', () => {
+    $('editTitleSettings').style.display = $('editShowTitle').checked ? '' : 'none';
+    liveUpdateModalToType();
+  });
+  ['editTitleX', 'editTitleY'].forEach(id => $(id).addEventListener('input', liveUpdateModalToType));
+  $('editSaveDefaults').addEventListener('click', () => {
+    const defaults = {
+      widthMm: +$('editW').value || 188,
+      heightMm: +$('editH').value || 90,
+      a4OffsetX: +$('editA4X').value,
+      a4OffsetY: +$('editA4Y').value,
+    };
+    localStorage.setItem(MODAL_DEFAULTS_KEY, JSON.stringify(defaults));
+    const btn = $('editSaveDefaults');
+    const orig = btn.textContent;
+    btn.textContent = '✓ 保存しました';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
   });
   // 編集モーダル: 初期位置プリセット（クリック後に live update）
   const getEditWH = () => ({ w: +$('editW').value || 188, h: +$('editH').value || 90 });
@@ -2002,6 +2094,35 @@ function setToday(rerender) {
 }
 
 document.addEventListener('DOMContentLoaded', () => { init(); _supabaseLoadAll(); });
+
+/* ============ 編集モーダル ドラッグ ============ */
+(function() {
+  const backdrop = document.getElementById('editModal');
+  const card = backdrop.querySelector('.modal-card');
+  const handle = backdrop.querySelector('h2');
+  let dragging = false, ox = 0, oy = 0;
+
+  handle.addEventListener('mousedown', e => {
+    dragging = true;
+    const rect = card.getBoundingClientRect();
+    card.style.transform = 'none';
+    card.style.left = rect.left + 'px';
+    card.style.top  = rect.top  + 'px';
+    ox = e.clientX - rect.left;
+    oy = e.clientY - rect.top;
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const maxX = window.innerWidth  - card.offsetWidth;
+    const maxY = window.innerHeight - card.offsetHeight;
+    card.style.left = Math.min(Math.max(0, e.clientX - ox), maxX) + 'px';
+    card.style.top  = Math.min(Math.max(0, e.clientY - oy), maxY) + 'px';
+  });
+
+  document.addEventListener('mouseup', () => { dragging = false; });
+})();
 </script>
 </body>
 </html>
